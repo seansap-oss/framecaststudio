@@ -173,10 +173,10 @@ function graphicRaw(key,l){
  const asset=assets[key];if(asset){paintAsset(asset,w,h,l.crop)}
  else if(!['Logo','Ad'].includes(key)){
  if(key!=='Watermark'){ctx.fillStyle=l.fill;ctx.fillRect(0,0,w,h)}
- ctx.fillStyle=l.ink;ctx.font='bold '+W*l.size/100+'px '+l.font;ctx.textBaseline='middle';const lines=l.text.split('\n').filter(Boolean);let content=l.text,px=w*.035,py=h/2,fit=true;
+ ctx.fillStyle=l.ink;ctx.font='bold '+W*l.size/100+'px '+l.font;ctx.textBaseline='middle';const messages=Array.isArray(l.messages)&&l.messages.length?l.messages:null;const lines=(messages?messages.map(m=>m.text):l.text.split('\n')).filter(Boolean);let content=l.text,px=w*.035,py=h/2,fit=true;
  if(key!=='Watermark'&&l.direction!=='Static'){
- if(l.direction.startsWith('Scroll')){content=lines.join(' '+l.emoji+' ')+' '+l.emoji+' ';const width=ctx.measureText(content).width,cycle=w+width;let distance=t*l.speed*W/100;distance=l.repeat?distance%cycle:Math.min(distance,cycle);px=(!playing&&!busy)?w*.035:l.direction==='Scroll left'?w-distance:distance-width;fit=false}
- else{const travel=Math.max(.1,h/(l.speed*H/100)),cycle=l.hold+travel;const elapsed=l.repeat?t:Math.min(t,Math.max(0,lines.length*cycle-.001));content=lines[Math.floor(elapsed/cycle)%Math.max(1,lines.length)]||'';py+=(l.direction==='Enter from bottom'?1:-1)*h*(1-Math.min(1,(playing||busy?(elapsed%cycle)/travel:1)))}
+ if(l.direction.startsWith('Scroll')){content=messages?messages.map(m=>m.text+(m.icon?' '+m.icon:'')+' '+(m.separator??l.emoji)).join(' '):lines.join(' '+l.emoji+' ')+' '+l.emoji+' ';const width=ctx.measureText(content).width,cycle=w+width;let distance=t*l.speed*W/100;distance=l.repeat?distance%cycle:Math.min(distance,cycle);px=(!playing&&!busy)?w*.035:l.direction==='Scroll left'?w-distance:distance-width;fit=false}
+ else{const travel=Math.max(.1,h/(l.speed*H/100)),cycle=l.hold+travel;const elapsed=l.repeat?t:Math.min(t,Math.max(0,lines.length*cycle-.001));const index=Math.floor(elapsed/cycle)%Math.max(1,lines.length);content=lines[index]||'';const message=messages?.filter(m=>m.text)[index];if(message?.icon)content+=' '+message.icon;py+=(l.direction==='Enter from bottom'?1:-1)*h*(1-Math.min(1,(playing||busy?(elapsed%cycle)/travel:1)))}
  }
  if(fit)ctx.fillText(content,px,py,w*.94);else ctx.fillText(content,px,py);
  }

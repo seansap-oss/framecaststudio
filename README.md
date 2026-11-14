@@ -1,4 +1,4 @@
-# FrameCast Studio v0.10.0
+# FrameCast Studio v0.10.1
 
 A local-first video graphics editor with a multitrack timeline and local Live/Signage workspaces. Development checkpoint; read [BUILD-STATUS.md](BUILD-STATUS.md) for tested behaviour and remaining work.
 
@@ -12,11 +12,11 @@ Stop the old server with **Ctrl+C**, then run these in the same terminal:
 Set-Location D:\Framecaststudio
 git status --short
 git fetch origin
-git switch workbench/v0.10.0
+git switch workbench/v0.10.1
 py server.py
 ```
 
-Open **http://localhost:4173**. Use **Ctrl+F5** to refresh old assets. The header must say **v0.10.0**. Do not open another VS Code window.
+Open **http://localhost:4173**. Use **Ctrl+F5** to refresh old assets. The header must say **v0.10.1**. Do not open another VS Code window.
 
 The version branch preserves the original main/baseline. If Git reports local edits would be overwritten, preserve those edits before switching; do not run a hard reset. The ZIP contains the same source without credentials or personal media.
 
@@ -30,11 +30,15 @@ If you use the release ZIP instead of Git, preserve the current folder first:
 Set-Location D:\Framecaststudio
 $backup = "D:\Framecaststudio-backup-$(Get-Date -Format yyyyMMdd-HHmmss)"
 Copy-Item -LiteralPath D:\Framecaststudio -Destination $backup -Recurse
-Expand-Archive -LiteralPath "$env:USERPROFILE\Downloads\FrameCast-Studio-v0.10.0.zip" -DestinationPath D:\Framecaststudio -Force
+Expand-Archive -LiteralPath "$env:USERPROFILE\Downloads\FrameCast-Studio-v0.10.1.zip" -DestinationPath D:\Framecaststudio -Force
 py server.py
 ```
 
 This does not delete `.git` history or local `publish-settings.json`. Existing extra files remain. Use either Git or ZIP for the update, not both.
+
+## Ticker inspector update
+
+Select either Top ticker or Bottom ticker in the timeline. Each update is now an editable message row in Inspector: add, reorder, copy or remove rows, and choose a per-message emoji and horizontal separator beside its text. Direction, speed, hold and repeat appear below in the same inspector. Existing line-separated ticker text becomes rows when selected; saved projects retain rows and copied ticker layers. The Duplicate layer button is in every layer inspector.
 
 ## Editing controls
 

@@ -41,7 +41,7 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('GET', '/api/health')
         self.assertEqual(code, 200)
         self.assertEqual(data['service'], 'framecast-local')
-        self.assertEqual(data['version'], '0.10.0')
+        self.assertEqual(data['version'], '0.10.1')
         self.assertIsInstance(data['ffmpeg'], bool)
 
     def test_local_credentials_are_not_served(self):
