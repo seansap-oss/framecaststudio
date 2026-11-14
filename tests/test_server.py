@@ -41,7 +41,7 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('GET', '/api/health')
         self.assertEqual(code, 200)
         self.assertEqual(data['service'], 'framecast-local')
-        self.assertEqual(data['version'], '0.10.2')
+        self.assertEqual(data['version'], '0.10.3')
         self.assertIsInstance(data['ffmpeg'], bool)
 
     def test_local_credentials_are_not_served(self):
@@ -69,6 +69,8 @@ class ServiceTests(unittest.TestCase):
                     data = json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(target)]))
                     codecs = {s['codec_type']: s['codec_name'] for s in data['streams']}
                     self.assertEqual(codecs, {'video':video, 'audio':audio})
+                    video_stream = next(s for s in data['streams'] if s['codec_type'] == 'video')
+                    self.assertEqual(video_stream['avg_frame_rate'], '60/1')
                     self.assertGreater(target.stat().st_size, 1000)
 
 if __name__ == '__main__':

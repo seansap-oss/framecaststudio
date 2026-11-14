@@ -45,11 +45,11 @@ def oauth(provider, code):
         pages=http(graph+'/me/accounts?fields=id,name,access_token,instagram_business_account&limit=100',headers=auth(t['access_token']))['data']
         if not pages: raise ValueError('No accessible Facebook Pages returned')
         tokens['pages']={p['id']:p for p in pages}
-def encode(src,dst,fmt,preset):
+def encode(src,dst,fmt,preset,fps=60):
     quality={'Small':29,'Balanced':23,'High':18}[preset]
-    codec=['-c:v','libx264','-crf',str(quality),'-preset','veryfast','-c:a','aac','-ar','48000','-b:a','128k','-movflags','+faststart']
+    codec=['-c:v','libx264','-crf',str(quality),'-preset','medium','-c:a','aac','-ar','48000','-b:a','192k','-movflags','+faststart']
     if fmt=='webm': codec=['-c:v','libvpx-vp9','-crf',str(quality+9),'-b:v','0','-deadline','realtime','-cpu-used','6','-c:a','libopus']
-    subprocess.run(['ffmpeg','-nostdin','-v','error','-y','-protocol_whitelist','file,pipe','-f',('mov' if src.suffix=='.mp4' else 'matroska'),'-i',str(src),'-map','0:v:0','-map','0:a:0?','-pix_fmt','yuv420p',*codec,str(dst)],check=True)
+    subprocess.run(['ffmpeg','-nostdin','-v','error','-y','-protocol_whitelist','file,pipe','-f',('mov' if src.suffix=='.mp4' else 'matroska'),'-i',str(src),'-map','0:v:0','-map','0:a:0?','-pix_fmt','yuv420p',*codec,'-r',str(fps),'-fps_mode','cfr',str(dst)],check=True)
 def google_token():
     t=tokens['google']
     if t['expires']<time.time()+60:
@@ -118,7 +118,7 @@ class Handler(BaseHTTPRequestHandler):
                 if 'code' not in qs: raise ValueError('Sign-in cancelled or denied. Return to FrameCast and reconnect.')
                 oauth(provider,qs['code'][0]);return self.reply('Account connected. Close this tab and refresh accounts in FrameCast.','text/plain')
             if not post and route=='/api/health':
-                return self.reply(dict(service='framecast-local',version='0.10.2',ffmpeg=bool(shutil.which('ffmpeg'))))
+                return self.reply(dict(service='framecast-local',version='0.10.3',ffmpeg=bool(shutil.which('ffmpeg'))))
             if not post and route=='/api/accounts':
                 return self.reply(dict(configured={p:bool(cfg.get(p+'_id') and cfg.get(p+'_secret')) for p in ('meta','google')},youtube=tokens.get('google',{}).get('name'),pages=[dict(id=p['id'],name=p['name'],instagram=bool(p.get('instagram_business_account'))) for p in tokens.get('pages',{}).values()]))
             if post and route.startswith('/api/connect/'):
@@ -144,7 +144,7 @@ class Handler(BaseHTTPRequestHandler):
                             part=self.rfile.read(min(1048576,remaining))
                             if not part:raise ValueError('Incomplete recording')
                             f.write(part);remaining-=len(part)
-                    encode(src,dst,fmt,preset);renders[ident]=dst
+                    encode(src,dst,fmt,preset,60 if qs.get('fps',['60'])[0]=='60' else 30);renders[ident]=dst
                 finally:src.unlink(missing_ok=True)
                 return self.reply(dict(id=ident,bytes=dst.stat().st_size))
             if not post and route.startswith('/media/'):

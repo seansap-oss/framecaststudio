@@ -2,7 +2,7 @@
 let bridge=false;
 let bridgeInfo={ffmpeg:false};
 const formatPanel=el('section');
-formatPanel.innerHTML=row('File format',select('container',['MP4','MOV','WebM']))+row('Compression',select('quality',['Balanced','Small','High']))+'<p id="encoderState" class="helpText">Checking available encoders…</p>';
+formatPanel.innerHTML=row('File format',select('container',['MP4','MOV','WebM']))+row('Compression',select('quality',['High','Balanced','Small']))+row('Export frame rate',select('exportFps',['60','30']))+'<p id="encoderState" class="helpText">Checking available encoders…</p>';
 $('settingsHost').before(formatPanel);
 const accountPanel=el('details');accountPanel.open=true;
 accountPanel.innerHTML='<summary>Connected publishing</summary><div class="actions"><button id="googleLogin">Connect YouTube</button><button id="metaLogin">Connect Facebook & Instagram</button><button id="refreshLogin">Check connection</button></div><p id="accountState" role="status"></p>'+row('Facebook Page','<select id="pageAccount"></select>')+row('YouTube visibility',select('privacy',['private','unlisted','public']));
@@ -52,7 +52,7 @@ async function deliverRender(link,blob){
  const format=$('container').value.toLowerCase(),ratio=currentRatio;
  $('jobStatus').value='Encoding '+format.toUpperCase()+' · '+$('quality').value;
  renderAbort=new AbortController();const timeout=setTimeout(()=>renderAbort.abort(),3600000);let data;
- try{data=await api('/api/encode?'+new URLSearchParams({format,quality:$('quality').value}),{method:'POST',body:blob,signal:renderAbort.signal})}finally{clearTimeout(timeout);renderAbort=null}
+ try{data=await api('/api/encode?'+new URLSearchParams({format,quality:$('quality').value,fps:$('exportFps').value}),{method:'POST',body:blob,signal:renderAbort.signal})}finally{clearTimeout(timeout);renderAbort=null}
  URL.revokeObjectURL(link.href);link.href='/media/'+data.id;
  link.download=($('postTitle').value.trim()||'FrameCast').replace(/[<>:"/\\|?*]/g,'_')+'-'+ratio.replace(':','x')+'-'+$('resolution').value+'.'+format;
  link.textContent='Download '+link.download+' ('+(data.bytes/1048576).toFixed(1)+' MB)';

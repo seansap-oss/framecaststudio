@@ -212,9 +212,9 @@ async function render(){
  stop();renderCancelled=false;renderPaused=false;lock(true);await audioReady();dimensions();seek(renderStart);
  await Promise.all(Object.values(assets).filter(m=>m.seeking).map(m=>new Promise(resolve=>{m.addEventListener('seeked',resolve,{once:true});setTimeout(resolve,3000)})));
  await Promise.all(clips.map(c=>new Promise((resolve,reject)=>{c.media.currentTime=0;if(!c.media.seeking)return resolve();const timer=setTimeout(()=>reject(Error('Clip seek timed out')),5000);c.media.addEventListener('seeked',()=>{clearTimeout(timer);resolve()},{once:true})})));
- draw();stream=monitor.captureStream(30);stream.addTrack(streamOut.stream.getAudioTracks()[0].clone());
+ draw();stream=monitor.captureStream(Number($('exportFps').value)||60);stream.addTrack(streamOut.stream.getAudioTracks()[0].clone());
 
- record=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:Math.round(monitor.width*monitor.height*30*.12)});const chunks=[];let failed=false;
+ record=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:Math.round(monitor.width*monitor.height*(Number($('exportFps').value)||60)*.18)});const chunks=[];let failed=false;
  record.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
  record.onerror=()=>{failed=true;notify('Encoding failed. Try a lower resolution.')};
  record.onstop=async()=>{stop();stream.getTracks().forEach(t=>t.stop());if(!renderCancelled&&!failed&&chunks.length){const link=el('a','Download render');link.style.color='#9cc6ff';link.href=URL.createObjectURL(new Blob(chunks,{type:mime}));link.download='FrameCast-'+$('resolution').value+(mime.includes('mp4')?'.mp4':'.webm');try{await deliverRender(link,new Blob(chunks,{type:mime}));notify('Render finished · download available in Export')}catch(error){failed=true;notify(error.message)}}lock(false);record=null;renderEnd=null;renderStart=0;finishJob(!renderCancelled&&!failed&&chunks.length>0)};

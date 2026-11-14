@@ -1,8 +1,8 @@
-# FrameCast Studio v0.10.2 — working development checkpoint
+# FrameCast Studio v0.10.3 — working development checkpoint
 
 This release updates the existing editor. It is not a completed commercial SaaS or an OBS replacement. No existing editing, Live or Signage module has been removed. The original v0.9.2 assessment is retained in `docs/BUILD-STATUS-v092.md`.
 
-## Changed in v0.10.2
+## Changed in v0.10.3
 
 - Navy/gold workspace with tabbed tools, pinned panels, floating/docking controls, resizable sidebars/timeline and a compact project bar. Expanded timeline retains room for the monitor.
 - Compact lower-third sample graphics keep the presenter's face visible. All previous graphic layers remain editable.
@@ -63,10 +63,14 @@ A Vercel static build serves the editor only. It does not run the persistent loc
 
 **Release verdict:** suitable for local development testing; not ready to sell as the complete promised platform.
 
-## v0.10.2 ticker inspector
+## v0.10.3 ticker inspector
 
 Both ticker layers now use separate message rows with per-message emoji/icon and horizontal separator controls. Their direction, speed, hold and repeat controls appear in the same selected-layer inspector. Duplicates keep their own message list. Existing newline-separated text migrates into rows on selection. The local Python allowlist and static build include the new script. Syntax, 13 Node tests and 5 Python service tests passed. The browser security gate prevented an interactive browser check in this update, so inspect the local UI before relying on an export.
 
-## v0.10.2 render workflow
+## v0.10.3 render workflow
 
 Added separate named export ranges, range persistence, selected-range progress, render pause/resume and cancellation. Adjusted editor panel constraints at browser zoom breakpoints. Browser capture remains real time and the hosted SaaS/live roadmap remains pending.
+
+## v0.10.3 verification boundary
+
+Range alignment, visible In marker, edge dragging, duration labels and direct range selection were implemented. Export offers 60/30 fps with High compression quality by default; local encoder checks include average frame rate. This does not complete a deterministic offline renderer or prove jitter-free output on the user’s source media. Browser UI verification is outstanding.
