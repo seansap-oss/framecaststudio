@@ -147,8 +147,8 @@ $('copyCaption').onclick=async()=>{const copy=[$('postTitle').value,$('caption')
 $('batch').onclick=()=>{if(busy||jobs.length)return;const selected=Array.from($('destinations').children).filter(l=>l.firstChild.checked);jobs=[...new Set(selected.map(l=>l.lastChild.value))];if(!jobs.length){$('jobStatus').value='Choose at least one destination';return}
  rendered=[];jobSet=[...jobs];oldRatio=currentRatio;$('results').replaceChildren();nextJob()};
 function nextJob(){if(jobs.length){switchRatio(jobs.shift());render()}else{switchRatio(oldRatio);jobSet=[];$('jobStatus').value='Ready to download or share'}}
-function updateProgress(){const p=clamp(Math.floor(time/Math.max(.001,total())*100),0,99);$('progress').value=p;$('jobStatus').value=currentRatio+' · '+p+'% · '+fmt(time)+' / '+fmt(total());notify('Rendering '+currentRatio+' · '+p+'%')}
-function finishJob(ok){$('progress').value=ok?100:0;if(!ok){jobs=[];jobSet=[];$('jobStatus').value='Render failed. Try a lower resolution.';return}if(jobSet.length)setTimeout(nextJob,60)}
+function updateProgress(){const length=Math.max(.001,(renderEnd??total())-renderStart),p=clamp(Math.floor((time-renderStart)/length*100),0,99);$('progress').value=p;$('jobStatus').value=(renderPaused?'Paused · ':'Rendering · ')+currentRatio+' · '+p+'% · '+fmt(Math.max(0,time-renderStart))+' / '+fmt(length);notify((renderPaused?'Paused ':'Rendering ')+currentRatio+' · '+p+'%')}
+function finishJob(ok){$('progress').value=ok?100:0;if(!ok){jobs=[];jobSet=[];$('jobStatus').value=renderCancelled?'Render cancelled':'Render failed. Try a lower resolution.';return}if(jobSet.length)setTimeout(nextJob,60)}
 function registerRender(link,blob){
  const ext=link.download.split('.').pop(),name=($('postTitle').value.trim()||'FrameCast').replace(/[^\p{L}\p{N} _-]/gu,'_')+'-'+currentRatio.replace(':','x')+'-'+$('resolution').value+'.'+ext;
  link.download=name;link.textContent='Download '+name;const line=el('div');line.className='actions';line.append(link);const file=new File([blob],name,{type:blob.type.split(';')[0]});

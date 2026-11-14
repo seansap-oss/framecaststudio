@@ -51,7 +51,8 @@ async function deliverRender(link,blob){
  if(!bridge||!bridgeInfo.ffmpeg){registerRender(link,blob);return}
  const format=$('container').value.toLowerCase(),ratio=currentRatio;
  $('jobStatus').value='Encoding '+format.toUpperCase()+' · '+$('quality').value;
- const data=await api('/api/encode?'+new URLSearchParams({format,quality:$('quality').value}),{method:'POST',body:blob,signal:AbortSignal.timeout(3600000)});
+ renderAbort=new AbortController();const timeout=setTimeout(()=>renderAbort.abort(),3600000);let data;
+ try{data=await api('/api/encode?'+new URLSearchParams({format,quality:$('quality').value}),{method:'POST',body:blob,signal:renderAbort.signal})}finally{clearTimeout(timeout);renderAbort=null}
  URL.revokeObjectURL(link.href);link.href='/media/'+data.id;
  link.download=($('postTitle').value.trim()||'FrameCast').replace(/[<>:"/\\|?*]/g,'_')+'-'+ratio.replace(':','x')+'-'+$('resolution').value+'.'+format;
  link.textContent='Download '+link.download+' ('+(data.bytes/1048576).toFixed(1)+' MB)';

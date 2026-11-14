@@ -98,7 +98,7 @@ $('saveProject').onclick=async()=>{
   }
   const settings=typeof takeHistory==='function'?takeHistory().data.settings:{};
   const backdrop=background?await new Promise(async(resolve,reject)=>{try{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(await(await fetch(background.src)).blob())}catch(e){reject(e)}}):null;
-  downloadBlob(new Blob([JSON.stringify({version:10,layers,media,transitions:[...transitions],framing,ratio:currentRatio,title:$('postTitle').value,settings,background:backdrop})],{type:'application/json'}),'FrameCast-project.json');notify('Project saved with embedded media')
+  downloadBlob(new Blob([JSON.stringify({version:10,layers,media,transitions:[...transitions],framing,ratio:currentRatio,title:$('postTitle').value,settings,background:backdrop,exportRanges:[...ranges]})],{type:'application/json'}),'FrameCast-project.json');notify('Project saved with embedded media')
  }catch(e){notify('Save failed · '+e.message)}
 };
 $('loadProject').onclick=()=>$('projectFile').click();
@@ -113,7 +113,7 @@ $('projectFile').onchange=async e=>{
   for(const [id,value] of Object.entries(data.settings||{})){if(typeof mixerIds==='undefined'||!mixerIds.includes(id))continue;if($(id).type==='checkbox')$(id).checked=!!value;else $(id).value=value;}
   if(data.title){$('postTitle').value=data.title;$('renameProject').textContent=data.title+' ▾';}
   serial=Math.max(0,...Object.keys(layers).map(k=>Number(k.replace('insert-',''))||0));transitions.clear();for(const [key,value] of data.transitions||[])transitions.set(key,value);
-  framing=data.framing||{};currentRatio=data.ratio||'16:9';$('ratio').value=currentRatio;demo=false;rebuildOptions(Object.keys(layers)[0]);chooseLayer(Object.keys(layers)[0]);timeline();dimensions();seek(0);if(audio){connectInserts();levels();refreshCleanup()}if(typeof commitHistory==='function')commitHistory();notify('Project opened')
+  framing=data.framing||{};currentRatio=data.ratio||'16:9';$('ratio').value=currentRatio;demo=false;rebuildOptions(Object.keys(layers)[0]);chooseLayer(Object.keys(layers)[0]);timeline();dimensions();seek(0);ranges.splice(0,ranges.length,...(data.exportRanges||[]).filter(r=>Number.isFinite(r.start)&&Number.isFinite(r.end)&&r.end>r.start));rangeSerial=Math.max(0,...ranges.map(r=>r.id||0));selectedRange='all';paintRanges();if(audio){connectInserts();levels();refreshCleanup()}if(typeof commitHistory==='function')commitHistory();notify('Project opened')
  }catch(error){notify('Open failed · '+error.message)}finally{e.target.value=''}
 };
 $('pngExport').onclick=()=>{

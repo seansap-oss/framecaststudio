@@ -190,8 +190,9 @@ function dimensions(){
  monitor.width=rat==='16:9'?wide:short;monitor.height=rat==='9:16'?wide:short;monitor.style.setProperty('--ar',monitor.width/monitor.height);draw()
 }
 $('ratio').onchange=$('resolution').onchange=dimensions;
+let renderStart=0,renderEnd=null,renderPaused=false,renderCancelled=false,renderAbort=null;
 function frame(now){
- if(playing){time=Math.min(total(),(now-anchor)/1000);syncMedia();if(time>=total()){stop();if(record?.state==='recording')record.stop()}}
+ if(playing){time=Math.min(renderEnd??total(),(now-anchor)/1000);syncMedia();if(time>=(renderEnd??total())){stop();if(record?.state==='recording')record.stop()}}
  if(previewEnd!==null && (!playing||time>=previewEnd)){endTransitionPreview()}
  if(busy)updateProgress();
  draw();$('clock').textContent=fmt(time)+' / '+fmt(total());$('seek').value=time;
@@ -200,7 +201,7 @@ function frame(now){
  requestAnimationFrame(frame);
 }
 function pointer(e){const box=monitor.getBoundingClientRect();return [(e.clientX-box.left)*100/box.width,(e.clientY-box.top)*100/box.height]}
-function lock(on){busy=on;for(const control of document.querySelectorAll('#publish button,#publish input,#publish select,#publish textarea'))control.disabled=on;for(const id of ['desk','reset','exportTop'])$(id).inert=on;Object.values(panels).forEach(p=>p.inert=on);document.querySelector('.projectBar').inert=on;document.querySelector('.workspaceNav').inert=on;if(!on){encoderStatus();historyUI();}}
+function lock(on){busy=on;for(const control of document.querySelectorAll('#publish button,#publish input,#publish select,#publish textarea'))control.disabled=on;for(const id of ['desk','reset','exportTop'])$(id).inert=on;Object.values(panels).forEach(p=>p.inert=on);document.querySelector('.projectBar').inert=on;document.querySelector('.workspaceNav').inert=on;for(const id of ['pauseRender','cancelRender'])if($(id))$(id).disabled=!on;if(!on){encoderStatus();historyUI();}}
 async function render(){
  if(previewUndo)endTransitionPreview();
  if(busy||!total())return;
@@ -208,7 +209,7 @@ async function render(){
  try{
  await bridgeReady;
  const mime=recordingMime();if(!mime)throw Error('This browser cannot encode '+$('container').value+'. Choose WebM or start the local FFmpeg server.');
- stop();lock(true);await audioReady();dimensions();seek(0);
+ stop();renderCancelled=false;renderPaused=false;lock(true);await audioReady();dimensions();seek(renderStart);
  await Promise.all(Object.values(assets).filter(m=>m.seeking).map(m=>new Promise(resolve=>{m.addEventListener('seeked',resolve,{once:true});setTimeout(resolve,3000)})));
  await Promise.all(clips.map(c=>new Promise((resolve,reject)=>{c.media.currentTime=0;if(!c.media.seeking)return resolve();const timer=setTimeout(()=>reject(Error('Clip seek timed out')),5000);c.media.addEventListener('seeked',()=>{clearTimeout(timer);resolve()},{once:true})})));
  draw();stream=monitor.captureStream(30);stream.addTrack(streamOut.stream.getAudioTracks()[0].clone());
@@ -216,9 +217,9 @@ async function render(){
  record=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:Math.round(monitor.width*monitor.height*30*.12)});const chunks=[];let failed=false;
  record.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
  record.onerror=()=>{failed=true;notify('Encoding failed. Try a lower resolution.')};
- record.onstop=async()=>{stop();stream.getTracks().forEach(t=>t.stop());if(!failed&&chunks.length){const link=el('a','Download render');link.style.color='#9cc6ff';link.href=URL.createObjectURL(new Blob(chunks,{type:mime}));link.download='FrameCast-'+$('resolution').value+(mime.includes('mp4')?'.mp4':'.webm');try{await deliverRender(link,new Blob(chunks,{type:mime}));notify('Render finished · download available in Export')}catch(error){failed=true;notify(error.message)}}lock(false);record=null;finishJob(!failed&&chunks.length>0)};
+ record.onstop=async()=>{stop();stream.getTracks().forEach(t=>t.stop());if(!renderCancelled&&!failed&&chunks.length){const link=el('a','Download render');link.style.color='#9cc6ff';link.href=URL.createObjectURL(new Blob(chunks,{type:mime}));link.download='FrameCast-'+$('resolution').value+(mime.includes('mp4')?'.mp4':'.webm');try{await deliverRender(link,new Blob(chunks,{type:mime}));notify('Render finished · download available in Export')}catch(error){failed=true;notify(error.message)}}lock(false);record=null;renderEnd=null;renderStart=0;finishJob(!renderCancelled&&!failed&&chunks.length>0)};
  await run();record.start(250);notify('Rendering sequence · keep this tab visible');
- }catch(err){stop();lock(false);stream?.getTracks().forEach(t=>t.stop());notify('Render failed · '+err.message);finishJob(false)}
+ }catch(err){stop();lock(false);stream?.getTracks().forEach(t=>t.stop());notify(renderCancelled?'Render cancelled':'Render failed · '+err.message);finishJob(false)}
 }
 $('render').onclick=render;$('exportTop').onclick=()=>{panels.Export.hidden=false;panels.Export.classList.remove('fold');panels.Export.scrollIntoView({block:'nearest'});$('resolution').focus()};
 async function makeWaveform(media){
