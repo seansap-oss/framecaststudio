@@ -1,0 +1,11 @@
+{
+  "name": "framecast-studio",
+  "version": "0.10.0",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test tests/*.test.cjs",
+    "start": "python server.py"
+  },
+  "engines": { "node": ">=20" }
+}

@@ -1,0 +1,10 @@
+dist/
+node_modules/
+.openai/
+.vercel/
+__pycache__/
+media/
+publish-settings.json
+.env
+.env.*
+*.log

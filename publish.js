@@ -1,19 +1,20 @@
 'use strict';
-const bridge=location.origin==='http://localhost:4173';
+let bridge=false;
+let bridgeInfo={ffmpeg:false};
 const formatPanel=el('section');
-formatPanel.innerHTML=row('File format',select('container',bridge?['MP4','MOV','WebM']:['Browser recording']))+
- (bridge?row('Compression',select('quality',['Balanced','Small','High'])):'<small>Run py server.py for MP4, MOV and connected publishing.</small>');
+formatPanel.innerHTML=row('File format',select('container',['MP4','MOV','WebM']))+row('Compression',select('quality',['Balanced','Small','High']))+'<p id="encoderState" class="helpText">Checking available encoders…</p>';
 $('settingsHost').before(formatPanel);
-const accountPanel=el('details');
-accountPanel.innerHTML='<summary>Publishing accounts</summary><div class="actions"><button id="googleLogin">Connect YouTube</button><button id="metaLogin">Connect Facebook & Instagram</button><button id="refreshLogin">Refresh</button></div><p id="accountState"></p>'+row('Facebook Page','<select id="pageAccount"></select>')+row('YouTube visibility',select('privacy',['private','unlisted','public']));
-if(bridge)$('destinations').before(accountPanel);
+const accountPanel=el('details');accountPanel.open=true;
+accountPanel.innerHTML='<summary>Connected publishing</summary><div class="actions"><button id="googleLogin">Connect YouTube</button><button id="metaLogin">Connect Facebook & Instagram</button><button id="refreshLogin">Check connection</button></div><p id="accountState" role="status"></p>'+row('Facebook Page','<select id="pageAccount"></select>')+row('YouTube visibility',select('privacy',['private','unlisted','public']));
+$('destinations').before(accountPanel);
 let accounts={pages:[]};
 const publishViews=new Set();
 let connectionError="";
 async function api(path,options){
- const res=await fetch(path,options),data=await res.json();if(!res.ok)throw Error(data.error||res.statusText);return data
+ const res=await fetch(path,{...options,signal:options?.signal||AbortSignal.timeout(20000)});if(!res.headers.get('content-type')?.includes('application/json'))throw Error('Publishing service is unavailable. Start FrameCast with py server.py.');const data=await res.json();if(!res.ok)throw Error(data.error||res.statusText);return data
 }
 async function refreshAccounts(){
+ if(!bridge){$('accountState').textContent='This is the browser editor. Direct publishing needs the local FrameCast server with your Google / Meta app credentials, or a configured hosted publishing service. Your accounts are not connected.';return}
  try{connectionError="";accounts=await api('/api/accounts');const previous=$('pageAccount').value;
  $('pageAccount').replaceChildren(...accounts.pages.map(p=>named(p.id,p.name+(p.instagram?' · Instagram linked':''))));
  if(accounts.pages.some(p=>p.id===previous))$('pageAccount').value=previous;
@@ -21,19 +22,36 @@ async function refreshAccounts(){
  catch(e){accounts={pages:[]};connectionError=e.message;$('accountState').textContent=e.message}
  for(const view of publishViews){if(view.box.isConnected)view.update();else publishViews.delete(view)}
 }
-if(bridge){
- for(const [button,provider] of [['googleLogin','google'],['metaLogin','meta']])$(button).onclick=async()=>{
-  const tab=window.open('about:blank','_blank');if(!tab)return $('accountState').textContent='Allow the sign-in window and try again.';
-  tab.opener=null;
-  try{const result=await api('/api/connect/'+provider,{method:'POST'});tab.location=result.url}catch(e){tab.close();$('accountState').textContent=e.message}
- };
- $('refreshLogin').onclick=refreshAccounts;window.addEventListener('focus',refreshAccounts);refreshAccounts()
+function recordingMime(){
+ const format=$('container').value;
+ const candidates=bridge&&bridgeInfo.ffmpeg?['video/webm;codecs=vp8,opus','video/webm','video/mp4']:format==='MP4'?['video/mp4;codecs=avc1.42001e,mp4a.40.2','video/mp4']:format==='WebM'?['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']:[];
+ return typeof MediaRecorder!=='undefined'?candidates.find(v=>MediaRecorder.isTypeSupported(v)):null;
 }
+function encoderStatus(){
+ const native=recordingMime();
+ $('encoderState').textContent=bridge&&bridgeInfo.ffmpeg?'Local FFmpeg encoder ready · MP4 / MOV / WebM.':native?'Browser '+$('container').value+' recording available. Direct publishing is not configured.':$('container').value+' requires the local server with FFmpeg, or choose a format supported by this browser.';
+ $('quality').disabled=!bridge||!bridgeInfo.ffmpeg;$('quality').title=bridge?'FFmpeg compression preset':'Browser bitrate is set automatically';
+}
+const bridgeReady=(async()=>{
+ try{const info=await api('/api/health');if(info.service==='framecast-local'){bridge=true;bridgeInfo=info}}catch{}
+ encoderStatus();await refreshAccounts();
+})();
+for(const [button,provider] of [['googleLogin','google'],['metaLogin','meta']])$(button).onclick=async()=>{
+ await bridgeReady;
+ if(!bridge){refreshAccounts();$('accountState').textContent+=' On your Windows PC, run py server.py in D:\\Framecaststudio and open http://localhost:4173.';return}
+ const popup=window.open('about:blank','_blank');if(!popup)return $('accountState').textContent='Allow the sign-in window and try again.';
+ popup.opener=null;
+ try{const result=await api('/api/connect/'+provider,{method:'POST'});popup.location=result.url}catch(e){popup.close();$('accountState').textContent=e.message}
+};
+$('refreshLogin').onclick=async()=>{await bridgeReady;await refreshAccounts()};
+$('container').onchange=encoderStatus;
+window.addEventListener('focus',()=>{if(bridge)refreshAccounts()});
+
 async function deliverRender(link,blob){
- if(!bridge){registerRender(link,blob);return}
+ if(!bridge||!bridgeInfo.ffmpeg){registerRender(link,blob);return}
  const format=$('container').value.toLowerCase(),ratio=currentRatio;
  $('jobStatus').value='Encoding '+format.toUpperCase()+' · '+$('quality').value;
- const data=await api('/api/encode?'+new URLSearchParams({format,quality:$('quality').value}),{method:'POST',body:blob});
+ const data=await api('/api/encode?'+new URLSearchParams({format,quality:$('quality').value}),{method:'POST',body:blob,signal:AbortSignal.timeout(3600000)});
  URL.revokeObjectURL(link.href);link.href='/media/'+data.id;
  link.download=($('postTitle').value.trim()||'FrameCast').replace(/[<>:"/\\|?*]/g,'_')+'-'+ratio.replace(':','x')+'-'+$('resolution').value+'.'+format;
  link.textContent='Download '+link.download+' ('+(data.bytes/1048576).toFixed(1)+' MB)';

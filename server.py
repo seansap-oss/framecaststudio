@@ -8,7 +8,7 @@ from urllib.error import HTTPError
 
 ROOT = Path(__file__).resolve().parent
 ORIGIN = 'http://localhost:4173'
-PUBLIC = {'index.html','studio.css','studio.js','timeline.js','layers.js','tracks.js','sample.js','publish.js','editing.js','workspace.js','image-editing.js'}
+PUBLIC = {'index.html','studio.css','studio.js','timeline.js','layers.js','tracks.js','sample.js','publish.js','editing.js','workspace.js','image-editing.js','editor-core.js','editor-workspace.js','editor-workspace.css'}
 CONFIG = ROOT/'publish-settings.json'
 cfg = json.loads(CONFIG.read_text(encoding='utf-8-sig')) if CONFIG.exists() else {}
 temp = tempfile.TemporaryDirectory()
@@ -117,6 +117,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not state or state[0]!=provider or state[1]<time.time(): raise ValueError('Sign-in expired')
                 if 'code' not in qs: raise ValueError('Sign-in cancelled or denied. Return to FrameCast and reconnect.')
                 oauth(provider,qs['code'][0]);return self.reply('Account connected. Close this tab and refresh accounts in FrameCast.','text/plain')
+            if not post and route=='/api/health':
+                return self.reply(dict(service='framecast-local',version='0.10.0',ffmpeg=bool(shutil.which('ffmpeg'))))
             if not post and route=='/api/accounts':
                 return self.reply(dict(configured={p:bool(cfg.get(p+'_id') and cfg.get(p+'_secret')) for p in ('meta','google')},youtube=tokens.get('google',{}).get('name'),pages=[dict(id=p['id'],name=p['name'],instagram=bool(p.get('instagram_business_account'))) for p in tokens.get('pages',{}).values()]))
             if post and route.startswith('/api/connect/'):
@@ -175,7 +177,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:return self.reply({'error':str(e)},code=400)
 
 if __name__=='__main__':
-    if not shutil.which('ffmpeg'):raise SystemExit('Install FFmpeg and restart the terminal.')
+    if not shutil.which('ffmpeg'):print('FFmpeg not found: editing is available; install FFmpeg for MP4 / MOV conversion.',flush=True)
     server=ThreadingHTTPServer(('127.0.0.1',4173),Handler)
     print('FrameCast Studio: '+ORIGIN,flush=True);webbrowser.open(ORIGIN)
     try:server.serve_forever()

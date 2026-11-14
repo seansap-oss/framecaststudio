@@ -1,6 +1,6 @@
 'use strict';
 let currentMain=null;
-const MIN_LENGTH=0.04;
+const MIN_LENGTH=1/30;
 function timelineSpan(){const length=total();return length+Math.max(1,length*.12)}
 function assignMainTimes(){
  let end=0;
@@ -18,8 +18,7 @@ function placeUnderTitles(key){
  keys.splice(firstTitle<0?keys.length:firstTitle,0,key);applyOrder(keys);
 }
 function orderAt(key,other,above){
- const keys=Object.keys(layers).filter(k=>k!==key);
- keys.splice(keys.indexOf(other)+(above?1:0),0,key);applyOrder(keys);
+ applyOrder(FrameCastCore.reorder(Object.keys(layers),key,other,above));
 }
 function bindTrackOrder(lane,key){
  const line=lane.parentElement,label=line.firstChild;line.dataset.key=key;decorateHeader(label,key);
@@ -48,13 +47,7 @@ function clipLimits(key,item){
 }
 // Body drags preserve the source range. Trimming the left edge preserves the source end.
 function editedRange(original,mode,delta,limits){
- let {start,source,duration}=original;
- const minimum=Math.min(MIN_LENGTH,duration);
- if(mode==='move')start=clamp(start+delta,limits.min,limits.max-duration);
- if(mode==='left'){const move=clamp(delta,Math.max(limits.min-start,Number.isFinite(limits.source)?-source:-Infinity),duration-minimum);start+=move;duration-=move;if(Number.isFinite(limits.source))source+=move}
- if(mode==='right')duration=clamp(duration+delta,minimum,Math.min(limits.source-source,limits.max-start));
- if(mode==='slip')source=clamp(source+delta,0,limits.source-duration);
- return {start,source,duration};
+ return FrameCastCore.range(original,mode,delta,limits);
 }
 function commitRange(key,item,state){
  const {start,source,duration}=state;
@@ -108,46 +101,53 @@ function bindRegion(button,key,item,lane,span){
  button.onpointerdown=e=>{
   if(busy||e.button!==0)return;e.preventDefault();stop();inspectClip(key,item);
   const mode=e.target.dataset.mode||'move',x=e.clientX,width=lane.clientWidth,source=clipState(key,item,total()),limits=clipLimits(key,item);
-  button.setPointerCapture(e.pointerId);let moved=false,result=source,axis=null,target=null,above=false;
-  const originY=e.clientY;
+  button.setPointerCapture(e.pointerId);let moved=false,result=source,target=null,above=false;
+  const originY=e.clientY,scrollX=scrollTime.scrollLeft;
+  const line=lane.parentElement;
   function clearTarget(){target?.classList.remove('dropAbove','dropBelow');target=null}
   button.onpointermove=ev=>{
    const dy=ev.clientY-originY;
-   if(key && mode==='move' && !axis && Math.max(Math.abs(dy),Math.abs(ev.clientX-x))>=5)axis=Math.abs(dy)>Math.abs(ev.clientX-x)?'stack':'time';
-   if(key && mode==='move' && !axis)return;
-   if(axis==='stack'){
-    moved=true;clearTarget();autoScrollRows(ev.clientY);
+   if(!moved && Math.hypot(ev.clientX-x,dy)<4)return;moved=true;
+   button.classList.add('dragging');
+   const viewport=scrollTime.getBoundingClientRect();
+   if(ev.clientX>viewport.right-32)scrollTime.scrollLeft+=18;
+   if(ev.clientX<viewport.left+190)scrollTime.scrollLeft-=18;
+   const px=ev.clientX-x+scrollTime.scrollLeft-scrollX;
+   result=editedRange(source,mode,px/width*span,limits);
+   result=snapRange(key,result,mode,span,width,ev.altKey);position(result);refreshInspector(result);
+   clearTarget();
+   if(key&&mode==='move'){
+    autoScrollRows(ev.clientY);
     const hit=document.elementFromPoint(ev.clientX,ev.clientY)?.closest('.track[data-key]');
-    if(hit && hit.dataset.key!==key){target=hit;above=ev.clientY<hit.getBoundingClientRect().top+hit.offsetHeight/2;hit.classList.add(above?'dropAbove':'dropBelow')}
-    return;
+    if(hit && hit!==line){target=hit;above=ev.clientY<hit.getBoundingClientRect().top+hit.offsetHeight/2;hit.classList.add(above?'dropAbove':'dropBelow')}
+    button.style.transform='translateY('+dy+'px)';
    }
-   const px=ev.clientX-x;if(!moved&&Math.abs(px)<2)return;moved=true;
-   result=editedRange(source,mode,px/width*span,limits);result=snapRange(key,result,mode,span,width,ev.altKey);position(result);refreshInspector(result);
-   notify((item.name||key)+' · '+fmt(result.start)+' → '+fmt(result.start+result.duration)+' · '+result.duration.toFixed(2)+' s');
+   notify((item.name||key)+' · '+frameTime(result.start)+' → '+frameTime(result.start+result.duration)+(target?' · '+(above?'above ':'below ')+layers[target.dataset.key].name:''));
   };
   const finish=commit=>{
    button.onpointermove=button.onpointerup=button.onpointercancel=null;
-   if(commit&&axis==='stack'&&target){orderAt(key,target.dataset.key,above);rebuildOptions(key)}
-   else if(commit&&moved&&axis!=='stack')commitRange(key,item,result);
+   button.style.transform='';button.classList.remove('dragging');
+   if(commit&&moved){commitRange(key,item,result);if(target){orderAt(key,target.dataset.key,above);rebuildOptions(key)}}
    clearTarget();clearSnap();
-   timeline();seek(clamp(time,0,total()));inspect();refreshInspector()
+   timeline();seek(clamp(time,0,total()));inspect();refreshInspector();
+   if(commit&&moved)notify('Updated '+(item.name||key)+' · '+frameTime(result.start)+' · '+result.duration.toFixed(2)+' s');
   };
   button.onpointerup=()=>finish(true);button.onpointercancel=()=>finish(false);
  };
  button.onclick=()=>inspectClip(key,item);
 }
 const desk=$('desk'),timelinePane=$('timeline'),monitorPane=desk.querySelector('main');
-const sizingDefault=()=>({left:Math.max(280,Math.round(innerWidth*.19)),right:Math.max(300,Math.round(innerWidth*.22)),timeline:Math.round(innerHeight*.40),mode:'normal'});
+const sizingDefault=()=>({left:Math.min(280,Math.round(innerWidth*.19)),right:Math.min(330,Math.round(innerWidth*.23)),timeline:Math.round(innerHeight*.36),mode:'normal'});
 let sizing=sizingDefault();
-try{Object.assign(sizing,JSON.parse(localStorage.getItem('fc-pane-sizes')||'{}'))}catch{}
-function saveSizes(){try{localStorage.setItem('fc-pane-sizes',JSON.stringify(sizing))}catch{}}
+try{Object.assign(sizing,JSON.parse(localStorage.getItem('fc-pane-sizes-10')||'{}'))}catch{}
+function saveSizes(){try{localStorage.setItem('fc-pane-sizes-10',JSON.stringify(sizing))}catch{}}
 function sizeWorkspace(){
  const compact=innerWidth<=850;
  const leftVisible=!!$('left').querySelector('.panel:not([hidden])'),rightVisible=!!$('right').querySelector('.panel:not([hidden])');
  const available=desk.clientWidth-100,sideBudget=Math.max(320,available-300);
  let left=leftVisible?clamp(sizing.left,150,sideBudget-(rightVisible?180:0)):0;
  const right=rightVisible?clamp(sizing.right,180,sideBudget-left):0;
- const maxHeight=Math.max(110,(compact?innerHeight:desk.clientHeight)-150);
+ const maxHeight=Math.max(110,(compact?innerHeight:desk.clientHeight)-(compact?220:280));
  const height=sizing.mode==='fold'?timelinePane.firstElementChild.offsetHeight+4:sizing.mode==='expand'?maxHeight:clamp(sizing.timeline,105,maxHeight);
  if(compact){desk.style.gridTemplateColumns='';desk.style.gridTemplateRows='';timelinePane.style.maxHeight=height+'px';timelinePane.style.height=height+'px'}
  else{desk.style.gridTemplateColumns='60px '+left+'px minmax(150px,1fr) '+right+'px';desk.style.gridTemplateRows='minmax(105px,1fr) '+height+'px';timelinePane.style.maxHeight='';timelinePane.style.height=''}

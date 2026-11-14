@@ -1,48 +1,64 @@
-# FrameCast Studio v0.9.1
+# FrameCast Studio v0.10.0 — working development checkpoint
 
-This is a local development release. The complete approved cloud/live product is still in progress.
+This release updates the existing editor. It is not a completed commercial SaaS or an OBS replacement. No existing editing, Live or Signage module has been removed. The original v0.9.2 assessment is retained in `docs/BUILD-STATUS-v092.md`.
 
-## Implemented in this release
-- Timeline zoom, second/frame ruler at 30 fps, edge snapping across tracks, Alt bypass, visible overlap duration and clip timing labels.
-- Drop a transition onto the incoming video to infer its outgoing clip. A drop creates the requested overlap by moving the incoming clip when needed. The inspector remains available for manual choices.
-- Per-layer exposure, brightness, contrast, highlights, shadows, white balance, saturation, hue, lift/gamma/gain and RGB controls. Preview and canvas export share processing.
-- Copy/paste grade, three presets, before toggle and reset.
-- Self-contained project JSON saving/opening with embedded local media, layer order, clip timing, grades, transitions and orientation framing.
-- Transparent PNG export of the selected graphic, 4:5, 21:9 and custom project sizes.
-- Six visual template buttons connected to the existing named template storage.
-- Local Live workspace with camera/mic, screen share, video files, source gain, scene snapshots, preview/program, Take/fade, solo/split/PIP layouts, teleprompter and program recording.
-- Local Signage workspace with video/image playlists, editable names and durations, ordering, fullscreen playback and a start/end schedule.
+## Changed in v0.10.0
 
-## Verification
-JavaScript syntax and Python compilation passed. Targeted calculations passed for neutral color, exposure, temperature, frame time, snapping and snap bypass.
-The browser could not launch in this execution environment because its local socket was denied. Camera capture, visual layout, the full browser render and live audio routing require Windows browser validation.
-Live social publishing with authorized accounts remains unverified.
+- Navy/gold workspace with tabbed tools, pinned panels, floating/docking controls, resizable sidebars/timeline and a compact project bar. Expanded timeline retains room for the monitor.
+- Compact lower-third sample graphics keep the presenter's face visible. All previous graphic layers remain editable.
+- Clip-body dragging changes timing and layer position in the same gesture. End handles trim independently. Track grips reorder without changing timing. Source boundaries and minimum one-frame duration are preserved.
+- Visible timing labels, overlap regions, snapping guides, zoom, Fit, frame stepping, Duplicate and Delete.
+- Transition preset selection plus **Apply to selected**: choose the incoming video/image and a preset; the preceding clip is inferred and an overlap is created. Explicit From/To controls remain available. Fifteen effects retained.
+- Session undo/redo for layer state, timing, order, transitions, clip volume, grades, project title and mixer settings. Media references are retained for restoration. History has 40 entries; it is not a disk backup.
+- Per-clip volume/mute/envelopes retained with clearer audio lanes. Program EQ, hum filtering, low-pass hiss reduction and compressor retained.
+- Project v10 JSON adds title, mixer/key settings and embedded background to layers/media/grades/animations/transitions/framing. Loader accepts v9 files.
+- Fixed colour-processed video scaling, paused ticker readability and removed-layer rendering.
+- Local Live accepts project video sources directly; visible source meters/mute. Solo scenes mute unused sources. Removing a project-derived Live source no longer revokes its editor media URL.
+- Export checks the actual local service and encoder, defaults to MP4, and reports unavailable encoders/accounts. Static website no longer throws while attaching publishing controls.
+- Static deployment has an explicit public-file allowlist in `build.mjs`. Local credentials and Python are not copied into `dist`.
 
-## Remaining approved work
-- Hosted accounts, cloud storage/sync, billing and deployment.
-- Remote guests, invitation links, backstage, producer roles and private communications.
-- Live RTMP/multistream service, dual live outputs, live destination connections and reconnect monitoring.
-- Guest ISO recordings and reliable resumable recording upload.
-- Live platform comments and moderation, highlight markers and caption tools.
-- Prerecorded cloud broadcasts and remote signage players.
-- Background removal and a licensed premium media catalogue.
-- Windows EXE, Mac/mobile packaging and subscription activation.
-- UI refinement to the approved mockup and full browser/hardware regression testing.
+## Verification performed
 
-## Known limits
-- Live program currently records locally as WebM or browser-supported MP4. The editor still supports FFmpeg conversion through the local server.
-- Live sources and scenes are session-only. Embedded project files save editor media and settings, not live devices, signage playlists, external browser assets or mixer settings.
-- The project JSON format embeds media and may become very large for long productions.
-- CPU color processing may reduce preview/render performance on high resolution clips.
-- Local signage schedules run only while this page is open. Display timestamps use the computer's local timezone.
-- The timeline uses 30 fps editing increments. Media can still contain other source frame rates.
+| Check | Result |
+|---|---|
+| JavaScript syntax, Python compilation, patch whitespace | Passed |
+| 13 Node tests: trim bounds, minimum frame, snapping/bypass, stacking, transition overlap | Passed |
+| 5 Python service tests: health, credential isolation, origin checks, missing credentials, three-container encode | Passed |
+| Browser duplicate, change start, diagonal drag across tracks, trim 8 to 5 seconds | Passed |
+| Browser Fade through black, Undo and Redo | Passed |
+| Browser numeric gain 20%, drag audio envelope to 20% / −14 dB | Passed |
+| Browser MP4 render to 100%, download, inspect streams and exported frame | Passed: 854×480, about 8.36 seconds, native MP4 (VP9/Opus on test browser) |
+| Local FFmpeg MP4/MOV H.264 + AAC; WebM VP9 + Opus | Passed with generated one-second media |
+| Browser project sources → Take → local Live recording → download | Passed: VP8/Opus at 960×540 |
+| Browser project rename/save; inspect title, two embedded assets and 16 settings | Passed |
+| Image import/reopen round trip, physical camera/mic, touch devices | Not fully verified in this environment |
+| Google/Meta sign-in and actual social upload | Not verified: no configured provider apps/accounts available |
+| One/two-hour 1080p and 4K projects | Not validated; do not advertise support guarantees |
 
-## v0.9.1 correction
-Larger readable controls and timeline rows, contextual audio/video inspectors, no transform handles for audio, and readable paused vertical ticker text. Full cloud and live feature backlog above remains pending.
+`docs/editor-v010.jpg` shows the running application, not an image-generated mockup.
 
-## v0.9.2 image editing and assessment
-Added a dedicated Images import button, 5-second default image duration, Split at playhead (S), image/graphic fades, slides and zoom, rotation and horizontal flip, Fit/Fill/Center controls, sticky timeline ruler, and Live source/scene thumbnails.
-Image animations share preview and recorded output. Source media remains intact when splitting. Image audio is added on a separate Audio layer.
-Long files skip automatic whole-file audio waveform decoding above 120 seconds. This prevents that specific large allocation; long-video editing/export is still not validated.
-Recorded canvas export is real time. MediaRecorder chunks and embedded project JSON remain memory-heavy for long files. A proxy/media-reference workflow and streamed encoding are still required before claiming reliable one-hour or two-hour editing.
-Image animation math and JavaScript syntax passed. Visual/capture integration remains unverified. Product is not ready for paid launch.
+## Existing features retained
+
+Multiple video/audio/image/text layers; track naming/deletion/reordering; context-menu insertion; source trim; PIP/split layouts; eight resize handles; headline/speaker/tickers; horizontal/vertical ticker motion; speed/hold/repeat; emoji picker; movable logo/watermark; opacity; six named templates; brand colours; grade adjustments/presets; image fades/slides/zoom/rotation/flip; chroma key; monitor volume; local Take/fade; screen/camera/file sources; teleprompter; local signage playlist/schedule; 16:9, 9:16, 1:1, 4:5, 21:9/custom; 480/720/1080/2160 export options; captions and destination metadata.
+
+Existing controls have not all been regression tested in every combination. Large projects remain hardware/browser dependent.
+
+## Publishing and deployment
+
+The local `server.py` contains Google and Meta OAuth/upload adapters. Run `py server.py` and provide valid provider app configuration for local publishing; see `PUBLISHING.md`. Selecting destinations does not connect accounts. No video was posted to a real account during these tests.
+
+A Vercel static build serves the editor only. It does not run the persistent local Python/FFmpeg service. Hosted publishing, secure token storage, account authentication and provider approvals are still required for a public SaaS. The connected Vercel account did not return a FrameCast project during discovery; deployment there is not verified.
+
+## Remaining approved work — retained in scope
+
+- Hosted login, secure multi-user projects/storage/sync, billing and administration.
+- Production publishing service, provider configuration/review and real upload validation.
+- Proxy media, referenced projects, streamed encoding and long-video/4K endurance tests. Browser rendering is currently real time and buffers output; project JSON embeds media. No artificial clip-count limit is imposed, but hardware capacity is finite.
+- Remote guests, invitations/backstage, producer roles, private communication and ISO recording.
+- RTMP/multistream, destination health/reconnection, dual-orientation broadcasts, platform comments/moderation and prerecorded cloud broadcasts.
+- Captions, highlight markers, background removal, licensed premium assets and standalone icon creator.
+- Remote signage players/management. Current schedules require the page to stay open.
+- Windows EXE, Mac/mobile packaging, signed subscription licences and renewal administration.
+- Full visual parity with the approved broadcast mockup, accessibility/touch/responsive tests and comprehensive regression coverage.
+
+**Release verdict:** suitable for local development testing; not ready to sell as the complete promised platform.

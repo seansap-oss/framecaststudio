@@ -61,12 +61,12 @@ try{const saved=JSON.parse(localStorage.getItem('fc-layout-3')||'{}');for(const 
 $('reset').onclick=()=>{for(const [name,p] of Object.entries(panels)){dock(p,['Media','Mixer','Key','Brand'].includes(name)?'left':'right');p.hidden=false;p.classList.toggle('fold',['Key','Brand','Export'].includes(name))}document.querySelectorAll('nav button').forEach(b=>b.classList.add('active'));keepLayout()};
 const initial=(text,x,y,w,h,fill,ink,size)=>({text,x,y,w,h,fill,ink,size,font:'Arial',visible:true,opacity:100,start:0,end:0,direction:'Static',speed:12,hold:2,emoji:' • ',repeat:true});
 const layers={
- Headline:initial('EVENING BULLETIN',5,5,42,8,'#122241','#ffffff',2.8),
- Speaker:initial('STUDIO DESK',5,67,28,7,'#182844','#ffffff',2.6),
- 'Breaking news':initial('BREAKING NEWS',5,76,34,9,'#aa282d','#ffffff',3.5),
- 'Top ticker':initial('Regional news\nTonight’s headlines',54,9,40,13,'#132441','#ffffff',3),
- 'Bottom ticker':initial('Evening update   •   News from the region',5,85,90,9,'#e9edf2','#152333',2.8),
- Watermark:initial('FRAMECAST',62,63,30,6,'#000000','#ffffff',2.4),
+ Headline:initial('EVENING BULLETIN',3,4,30,5,'#122241','#e8c777',1.7),
+ Speaker:initial('STUDIO DESK',3,70,20,5,'#182844','#ffffff',1.8),
+ 'Breaking news':initial('BREAKING NEWS',3,77,25,6,'#aa282d','#ffffff',2.3),
+ 'Top ticker':initial('TONIGHT’S HEADLINES\nLATEST UPDATES FROM THE REGION',3,83,94,7,'#e9edf2','#152333',2.6),
+ 'Bottom ticker':initial('Evening update   •   News from the region',3,90,94,5,'#122241','#ffffff',1.7),
+ Watermark:initial('FRAMECAST',79,5,18,4,'#000000','#ffffff',1.5),
  Logo:initial('',79,4,16,12,'#101720','#ffffff',2),
  Ad:initial('',67,46,26,25,'#101720','#ffffff',2)
 };
@@ -165,7 +165,7 @@ function picture(src,box=null){
  ctx.save();ctx.beginPath();ctx.rect(W*box.x/100,H*box.y/100,bw,bh);ctx.clip();ctx.drawImage(src,W*box.x/100+(bw-dw)/2,H*box.y/100+(bh-dh)/2,dw,dh);ctx.restore();
 }
 function graphicRaw(key,l){
- if(!l.visible||time<l.start||(l.end&&time>=l.end))return;
+ if(l.removed||!l.visible||time<l.start||(l.end&&time>=l.end))return;
  if(l.program&&assets[key]?.readyState>=2){const split=Object.values(layers).some(v=>v!==l&&v.layout==='Split 50:50'&&onAir(v));ctx.save();ctx.globalAlpha=l.opacity/100;picture(assets[key],split?{x:0,y:0,w:50,h:100,crop:true}:l);ctx.restore();return}
  const W=monitor.width,H=monitor.height,w=W*l.w/100,h=H*l.h/100,t=time-l.start;let x=W*l.x/100,y=H*l.y/100;
  if(key==='Watermark'&&l.direction!=='Static'){const horiz=l.direction.startsWith('Scroll'),sign=['Scroll left','Enter from bottom'].includes(l.direction)?-1:1;const span=horiz?W+w:H+h;let pos=horiz?x:y;pos=((pos+sign*t*l.speed*W/100+(horiz?w:h))%span+span)%span-(horiz?w:h);if(horiz)x=pos;else y=pos}
@@ -174,8 +174,8 @@ function graphicRaw(key,l){
  else if(!['Logo','Ad'].includes(key)){
  if(key!=='Watermark'){ctx.fillStyle=l.fill;ctx.fillRect(0,0,w,h)}
  ctx.fillStyle=l.ink;ctx.font='bold '+W*l.size/100+'px '+l.font;ctx.textBaseline='middle';const lines=l.text.split('\n').filter(Boolean);let content=l.text,px=w*.035,py=h/2,fit=true;
- if(key.includes('ticker')&&l.direction!=='Static'){
- if(l.direction.startsWith('Scroll')){content=lines.join(' '+l.emoji+' ')+' '+l.emoji+' ';const width=ctx.measureText(content).width,cycle=w+width;let distance=(t+.6)*l.speed*W/100;distance=l.repeat?distance%cycle:Math.min(distance,cycle);px=l.direction==='Scroll left'?w-distance:distance-width;fit=false}
+ if(key!=='Watermark'&&l.direction!=='Static'){
+ if(l.direction.startsWith('Scroll')){content=lines.join(' '+l.emoji+' ')+' '+l.emoji+' ';const width=ctx.measureText(content).width,cycle=w+width;let distance=t*l.speed*W/100;distance=l.repeat?distance%cycle:Math.min(distance,cycle);px=(!playing&&!busy)?w*.035:l.direction==='Scroll left'?w-distance:distance-width;fit=false}
  else{const travel=Math.max(.1,h/(l.speed*H/100)),cycle=l.hold+travel;const elapsed=l.repeat?t:Math.min(t,Math.max(0,lines.length*cycle-.001));content=lines[Math.floor(elapsed/cycle)%Math.max(1,lines.length)]||'';py+=(l.direction==='Enter from bottom'?1:-1)*h*(1-Math.min(1,(playing||busy?(elapsed%cycle)/travel:1)))}
  }
  if(fit)ctx.fillText(content,px,py,w*.94);else ctx.fillText(content,px,py);
@@ -200,18 +200,20 @@ function frame(now){
  requestAnimationFrame(frame);
 }
 function pointer(e){const box=monitor.getBoundingClientRect();return [(e.clientX-box.left)*100/box.width,(e.clientY-box.top)*100/box.height]}
-function lock(on){busy=on;for(const control of document.querySelectorAll('#publish button,#publish input,#publish select,#publish textarea'))control.disabled=on;for(const id of ['desk','reset','exportTop'])$(id).inert=on;Object.values(panels).forEach(p=>p.inert=on)}
+function lock(on){busy=on;for(const control of document.querySelectorAll('#publish button,#publish input,#publish select,#publish textarea'))control.disabled=on;for(const id of ['desk','reset','exportTop'])$(id).inert=on;Object.values(panels).forEach(p=>p.inert=on);document.querySelector('.projectBar').inert=on;document.querySelector('.workspaceNav').inert=on;if(!on){encoderStatus();historyUI();}}
 async function render(){
  if(previewUndo)endTransitionPreview();
  if(busy||!total())return;
  let stream;
  try{
+ await bridgeReady;
+ const mime=recordingMime();if(!mime)throw Error('This browser cannot encode '+$('container').value+'. Choose WebM or start the local FFmpeg server.');
  stop();lock(true);await audioReady();dimensions();seek(0);
  await Promise.all(Object.values(assets).filter(m=>m.seeking).map(m=>new Promise(resolve=>{m.addEventListener('seeked',resolve,{once:true});setTimeout(resolve,3000)})));
  await Promise.all(clips.map(c=>new Promise((resolve,reject)=>{c.media.currentTime=0;if(!c.media.seeking)return resolve();const timer=setTimeout(()=>reject(Error('Clip seek timed out')),5000);c.media.addEventListener('seeked',()=>{clearTimeout(timer);resolve()},{once:true})})));
  draw();stream=monitor.captureStream(30);stream.addTrack(streamOut.stream.getAudioTracks()[0].clone());
- const mime=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4'].find(v=>MediaRecorder.isTypeSupported(v));if(!mime)throw Error('No supported encoder');
- record=new MediaRecorder(stream,{mimeType:mime});const chunks=[];let failed=false;
+
+ record=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:Math.round(monitor.width*monitor.height*30*.12)});const chunks=[];let failed=false;
  record.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
  record.onerror=()=>{failed=true;notify('Encoding failed. Try a lower resolution.')};
  record.onstop=async()=>{stop();stream.getTracks().forEach(t=>t.stop());if(!failed&&chunks.length){const link=el('a','Download render');link.style.color='#9cc6ff';link.href=URL.createObjectURL(new Blob(chunks,{type:mime}));link.download='FrameCast-'+$('resolution').value+(mime.includes('mp4')?'.mp4':'.webm');try{await deliverRender(link,new Blob(chunks,{type:mime}));notify('Render finished · download available in Export')}catch(error){failed=true;notify(error.message)}}lock(false);record=null;finishJob(!failed&&chunks.length>0)};

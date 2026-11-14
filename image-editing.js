@@ -18,7 +18,7 @@ async function splitSelected(){
   layer.end=at;layers[id]=right;if(copy)assets[id]=copy;
   orderAt(id,key,true);
   for(const [target,tr] of transitions)if(tr.from===key){tr.from=id}
-  rebuildOptions(id);chooseLayer(id);connectInserts();timeline();seek(at);notify('Clip split · source media retained')
+  rebuildOptions(id);chooseLayer(id);connectInserts();timeline();seek(at);notify('Clip split · source media retained');if(typeof commitHistory==='function')commitHistory();
  }catch(error){notify('Split failed · '+error.message)}
 }
 splitButton.onclick=splitSelected;
