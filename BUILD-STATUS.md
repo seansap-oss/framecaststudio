@@ -1,3 +1,13 @@
+# v0.12.4 — explicit export preflight and native audio mixing
+
+Native H.264 export now accepts additional audio tracks, mute, fixed clip/master volume, EQ, hum/hiss filters and compression through the existing FFmpeg audio mixer. Audio keyframes and complex visual effects still require the full compositor.
+
+When Fast local export is checked, incompatible projects stop BEFORE rendering with a blocking reason. The user can explicitly uncheck fast export to choose the full compositor. No effects are silently removed.
+
+25 JavaScript tests and 19 Python tests passed. Native tests include audio mixing, output frame verification, cancellation, pause/resume and API polling. The original Windows project remains unavailable: its exact blocker and performance are not yet verified. The earlier 136-second benchmark applies to v0.12.3 and was not rerun for this change. No claim of commercial editor parity.
+
+---
+
 # v0.12.3 — long-export boundary repair and native ticker export
 
 Implemented:

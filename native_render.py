@@ -106,9 +106,9 @@ class NativeJob:
                 if encoder=='h264_amf':opts+=['-quality','speed' if s.get('speed')=='Fast' else 'balanced','-rc','cqp','-qp_i',str(quality),'-qp_p',str(quality+2)]
                 else:opts+=['-preset',{'Fast':'veryfast','Balanced':'medium','Quality':'slow'}[s.get('speed','Balanced')],'-crf',str(quality),'-threads',str(min(8,os.cpu_count() or 2))]
                 cmd=['ffmpeg','-nostdin','-hide_banner','-loglevel','error','-xerror','-y','-ss',str(src_in),'-i',str(source),*extra,
-                     '-filter_complex_threads','2','-filter_complex',graph,'-map','[out]','-map','0:a:0?',
-                     '-frames:v',str(self.session.total),'-t',str(duration),*opts,'-c:a','aac','-b:a','192k','-movflags','+faststart',
-                     '-progress','pipe:1','-nostats',str(self.output)]
+                     '-filter_complex_threads','2','-filter_complex',graph,'-map','[out]','-an',
+                     '-frames:v',str(self.session.total),'-t',str(duration),*opts,
+                     '-progress','pipe:1','-nostats',str(self.session.silent)]
                 self.process=self.session.mux_process=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=self.session.log,text=True)
                 for line in self.process.stdout:
                     if line.startswith('frame='):self.frame=int(line.strip().split('=')[1])
@@ -118,6 +118,7 @@ class NativeJob:
             if self.session.cancelled:self.state='Cancelled';return
             if rc:raise ValueError('Native encoder failed. Download the error report for FFmpeg details.')
             self.state='Finalizing'
+            self.session.mux(self.output)
             data=json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0','-count_frames','-show_entries','stream=nb_read_frames','-of','json',str(self.output)]))
             actual=int(data['streams'][0]['nb_read_frames'])
             if actual!=self.session.total:raise ValueError(f'Output verification failed: expected {self.session.total} frames, got {actual}')

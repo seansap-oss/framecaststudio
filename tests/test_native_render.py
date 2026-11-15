@@ -15,7 +15,7 @@ def fixture(root,duration=2,width=160,height=90):
         '-f','lavfi','-i',f'sine=frequency=440:duration={duration+.08}',
         '-c:v','libx264','-preset','ultrafast','-c:a','aac',str(video)],check=True)
     settings=dict(start=0,end=duration+.08,fps=60,format='mp4',quality='High',speed='Fast',codec='h264',
-        audio=[],visual=[dict(id='main')],width=width,height=height,sourceIn=0,background='#123456',
+        audio=[dict(id='main',start=0,end=duration+.08,sourceIn=0,volume=80,bus='clip')],clip=100,bed=100,master=100,bass=0,equalizer=0,treble=0,hum=0,noise=0,compress=False,visual=[dict(id='main')],width=width,height=height,sourceIn=0,background='#123456',
         nativeLayers=[dict(kind='horizontal',x=0,y=height-20,width=width,height=20,start=0,end=duration+.08,
             direction='left',repeat=True,speed=width,textWidth=40),
             dict(kind='vertical',x=0,y=0,width=width,height=20,start=0,end=duration+.08,

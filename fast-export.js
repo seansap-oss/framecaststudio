@@ -3,22 +3,25 @@
 const fastToggle=document.createElement('label');
 fastToggle.innerHTML='<input id="fastExport" type="checkbox" checked> Fast local export when compatible (one video, titles and tickers)';
 $('progress').before(fastToggle);
-let nativeExport=false;
+let nativeExport=false,fastExportReason="";
+function rejectNative(reason){fastExportReason=reason;return null}
 function fastCandidate(settings){
- if(settings.format!=='mp4'||settings.codec!=='h264'||$('keyOn').checked||background||transitions.size)return null;
+ fastExportReason='';
+ if(settings.format!=='mp4'||settings.codec!=='h264')return rejectNative('Choose MP4 and H.264 for native export.');
+ if($('keyOn').checked||background||transitions.size)return rejectNative('Chroma key, a backdrop image, or transitions require the full compositor.');
  const visible=Object.entries(layers).filter(([,l])=>!l.removed&&l.visible&&l.kind!=='audio'&&l.start<settings.end&&(l.end||total())>settings.start);
  const video=visible.filter(([id,l])=>l.kind==='video'&&assets[id]?.tagName==='VIDEO');
- if(video.length!==1)return null;
+ if(video.length!==1)return rejectNative("Native export needs one visible video in this range; found "+video.length+".");
  const [id,l]=video[0],media=assets[id];
- if(l.x!==0||l.y!==0||l.w!==100||l.h!==100||l.grade||l.crop||l.opacity!==100||l.layout==='Split 50:50'||l.rotation||l.flip||l.animation&&l.animation!=='None')return null;
- if(settings.start<l.start||settings.end>(l.end||total())||settings.end>l.start+media.duration-(l.trimIn||0)+.01)return null;
+ if(l.x!==0||l.y!==0||l.w!==100||l.h!==100||l.grade||l.crop||l.opacity!==100||l.layout==='Split 50:50'||l.rotation||l.flip||l.animation&&l.animation!=='None')return rejectNative('Video '+(l.name||id)+' has resizing, cropping, grading or animation.');
+ if(settings.start<l.start||settings.end>(l.end||total())||settings.end>l.start+media.duration-(l.trimIn||0)+.01)return rejectNative('The export range extends outside video '+(l.name||id)+'. Select a range within the clip.');
  const audio=renderAudioSources().filter(a=>!a.mute&&a.volume>0&&a.start<settings.end&&a.end>settings.start);
- if(audio.some(a=>a.id!==id)||l.muted||(l.volume??100)!==100||l.points?.length||settings.clip!==100||settings.master!==100||settings.bass||settings.equalizer||settings.treble||settings.hum||settings.noise||settings.compress)return null;
+ if(settings.audio.some(a=>layers[a.id]?.points?.length))return rejectNative('Audio volume keyframes require the full compositor.');
  const overlays=visible.slice(visible.findIndex(([key])=>key===id)+1);
  for(const [key,g] of overlays){
-  if(g.kind==='video'||assets[key]?.tagName==='VIDEO'||g.grade||g.rotation||g.flip||g.animation&&g.animation!=='None'||g.imageEffect&&g.imageEffect!=='None'||g.imageEntrance&&g.imageEntrance!=='None'||g.imageExit&&g.imageExit!=='None'||animatedGifAssets.has(assets[key]))return null;
-  if(key==='Watermark'&&g.direction!=='Static')return null;
-  if(g.direction!=='Static'&&(assets[key]||g.w*monitor.width/100<1||g.h*monitor.height/100<1))return null;
+  if(g.kind==='video'||assets[key]?.tagName==='VIDEO'||g.grade||g.rotation||g.flip||g.animation&&g.animation!=='None'||g.imageEffect&&g.imageEffect!=='None'||g.imageEntrance&&g.imageEntrance!=='None'||g.imageExit&&g.imageExit!=='None'||animatedGifAssets.has(assets[key]))return rejectNative('Layer '+(g.name||key)+' has an effect or animated image requiring the full compositor.');
+  if(key==='Watermark'&&g.direction!=='Static')return rejectNative('The moving watermark requires the full compositor.');
+  if(g.direction!=='Static'&&(assets[key]||g.w*monitor.width/100<1||g.h*monitor.height/100<1))return rejectNative('Layer '+(g.name||key)+' has unsupported asset motion or dimensions.');
  }
  return {id,media,overlays,sourceIn:(l.trimIn||0)+settings.start-l.start};
 }
@@ -63,17 +66,19 @@ render=async function(){
  renderStart=range?.start??0;renderEnd=range?.end??null;await bridgeReady;
  if(!$('fastExport').checked||!bridgeInfo.ffmpeg||busy)return regularRender();
  dimensions();const settings=fixedSettings(),candidate=fastCandidate(settings);
- if(!candidate){notify('Using full compositor for this project');return regularRender()}
+ if(!candidate){jobs=[];jobSet=[];const message='Native export unavailable: '+fastExportReason+' No render started. To deliberately use the slower renderer, uncheck Fast local export.';$('jobStatus').value=message;notify(message);return}
  stop();fixedCancel=false;fixedPaused=false;fixedRequest=new AbortController();startExportClock();nativeExport=true;
  let id=null,ok=false,reason='';
  try{
   lock(true);$('jobStatus').value='Preparing native video and ticker export';
-  settings.visual=[{id:candidate.id}];settings.audio=[];settings.sourceIn=candidate.sourceIn;
+  settings.visual=[{id:candidate.id}];settings.sourceIn=candidate.sourceIn;
   settings.width=monitor.width;settings.height=monitor.height;settings.background=$('back').value;
   const {prepared,uploads}=await nativeGraphics(candidate,settings);settings.nativeLayers=prepared;
   const started=await fixedJson('/api/render/start',JSON.stringify(settings),fixedRequest.signal);id=fixedSession=started.id;
-  const source=await(await fetch(candidate.media.currentSrc||candidate.media.src,{signal:fixedRequest.signal})).blob();
-  for(const [path,blob] of [['source/'+id+'/'+candidate.id,source],...uploads.map(([name,blob])=>['native-asset/'+id+'/'+name,blob])]){
+  const sourceUploads=[];
+  const sources=new Map(renderAudioSources().map(a=>[a.id,a.url]));sources.set(candidate.id,candidate.media.currentSrc||candidate.media.src);
+  for(const [key,url] of sources){await fixedGate();sourceUploads.push(['source/'+id+'/'+key,await(await fetch(url,{signal:fixedRequest.signal})).blob()])}
+  for(const [path,blob] of [...sourceUploads,...uploads.map(([name,blob])=>['native-asset/'+id+'/'+name,blob])]){
    await fixedGate();const response=await fetch('/api/render/'+path,{method:'POST',body:blob,signal:fixedRequest.signal});
    if(!response.ok)throw Error((await response.json()).error||'Media preparation failed');
   }

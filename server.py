@@ -160,7 +160,7 @@ class Handler(BaseHTTPRequestHandler):
                 if 'code' not in qs: raise ValueError('Sign-in cancelled or denied. Return to FrameCast and reconnect.')
                 oauth(provider,qs['code'][0]);return self.reply('Account connected. Close this tab and refresh accounts in FrameCast.','text/plain')
             if not post and route=='/api/health':
-                return self.reply(dict(service='framecast-local',version='0.12.3',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
+                return self.reply(dict(service='framecast-local',version='0.12.4',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
             if post and route=='/api/render/start':
                 if not shutil.which('ffmpeg') or not shutil.which('ffprobe'): raise ValueError('Install FFmpeg and FFprobe for fixed-frame export')
                 size=int(self.headers.get('Content-Length','0'))
