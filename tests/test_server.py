@@ -43,7 +43,7 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('GET', '/api/health')
         self.assertEqual(code, 200)
         self.assertEqual(data['service'], 'framecast-local')
-        self.assertEqual(data['version'], '0.11.2')
+        self.assertEqual(data['version'], '0.11.3')
         self.assertTrue(data['fixedFrames'])
         self.assertIsInstance(data['ffmpeg'], bool)
 
@@ -78,7 +78,7 @@ class ServiceTests(unittest.TestCase):
             subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','sine=frequency=440:sample_rate=48000',
                 '-t','1','-c:a','pcm_s16le',str(wav)],check=True)
             settings = {'start':0,'end':1,'fps':30,'format':'mp4','quality':'Balanced','codec':'h264',
-                'audio':[{'id':'tone','start':0,'end':1,'sourceIn':0,'volume':80,'bus':'clip'}],
+                'audio':[{'id':'tone','start':0,'end':1,'sourceIn':0,'volume':80,'bus':'clip'}], 'visual':[],
                 'bed':100,'clip':100,'master':100,'bass':0,'equalizer':0,'treble':0,
                 'hum':0,'noise':0,'compress':False}
             job = FixedFrameRender(root/'job',settings,'libx264')
@@ -105,7 +105,7 @@ class ServiceTests(unittest.TestCase):
             subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=s=160x90',
                 '-frames:v','1',str(png)],check=True)
             settings = dict(start=0,end=.2,fps=30,format='mp4',quality='Balanced',codec='h264',
-                audio=[dict(id='clip1',start=0,end=.2,sourceIn=0,volume=100,bus='clip')],
+                audio=[dict(id='clip1',start=0,end=.2,sourceIn=0,volume=100,bus='clip')],visual=[],
                 clip=100,bed=100,master=100,bass=0,equalizer=0,treble=0,hum=0,noise=0,compress=False)
             code, state = self.request('POST','/api/render/start',origin=app.ORIGIN,
                 payload=json.dumps(settings).encode())
@@ -122,6 +122,33 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(code,200)
             self.assertEqual(finished['frames'],6)
             self.assertGreater(finished['bytes'],1000)
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'Install FFmpeg to test video decoding')
+    def test_video_frames_decode_sequentially_without_browser_seeking(self):
+        with tempfile.TemporaryDirectory() as folder:
+            video = Path(folder)/'variable.mp4'
+            subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=s=160x90:r=30',
+                '-t','2','-c:v','libx264','-pix_fmt','yuv420p',str(video)],check=True)
+            settings = dict(start=0,end=1,fps=30,format='mp4',quality='Balanced',codec='h264',
+                audio=[],visual=[dict(id='visual1')])
+            code, state = self.request('POST','/api/render/start',origin=app.ORIGIN,
+                payload=json.dumps(settings).encode())
+            self.assertEqual(code,200)
+            ident=state['id']
+            self.assertEqual(self.request('POST',f'/api/render/source/{ident}/visual1',origin=app.ORIGIN,
+                payload=video.read_bytes())[0],200)
+            def frame(at):
+                conn=http.client.HTTPConnection('127.0.0.1',self.httpd.server_port,timeout=10)
+                conn.request('GET',f'/api/render/video/{ident}/visual1?t={at}',headers={'Host':'localhost:4173'})
+                response=conn.getresponse();body=response.read();status=response.status;conn.close()
+                self.assertEqual(status,200,body)
+                self.assertTrue(body.startswith(b'\xff\xd8'))
+                return body
+            first=frame(0)
+            self.assertEqual(frame(0),first)
+            self.assertNotEqual(frame(0.5),first)
+            self.assertNotEqual(frame(0.1),first)
+            self.assertEqual(self.request('POST',f'/api/render/cancel/{ident}',origin=app.ORIGIN,payload=b'{}')[0],200)
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'Install FFmpeg to test encoding')
     def test_all_three_containers_include_video_and_audio(self):

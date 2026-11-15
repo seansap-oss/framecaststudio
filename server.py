@@ -147,7 +147,7 @@ class Handler(BaseHTTPRequestHandler):
                 if 'code' not in qs: raise ValueError('Sign-in cancelled or denied. Return to FrameCast and reconnect.')
                 oauth(provider,qs['code'][0]);return self.reply('Account connected. Close this tab and refresh accounts in FrameCast.','text/plain')
             if not post and route=='/api/health':
-                return self.reply(dict(service='framecast-local',version='0.11.2',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
+                return self.reply(dict(service='framecast-local',version='0.11.3',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
             if post and route=='/api/render/start':
                 if not shutil.which('ffmpeg') or not shutil.which('ffprobe'): raise ValueError('Install FFmpeg and FFprobe for fixed-frame export')
                 size=int(self.headers.get('Content-Length','0'))
@@ -157,8 +157,8 @@ class Handler(BaseHTTPRequestHandler):
                 encoder=available_encoders()[resolve_codec(settings['format'],settings.get('codec'))]
                 fps=settings.get('fps');start=settings.get('start');end=settings.get('end')
                 if fps not in (30,60) or not all(isinstance(v,(int,float)) and __import__('math').isfinite(v) for v in (start,end)) or not 0<=start<end<=86400:raise ValueError('Invalid render time or frame rate')
-                if not isinstance(settings.get('audio'),list) or len(settings['audio'])>256:raise ValueError('Invalid audio sources')
-                for entry in settings['audio']:
+                if not isinstance(settings.get('audio'),list) or len(settings['audio'])>256 or not isinstance(settings.get('visual'),list) or len(settings['visual'])>256:raise ValueError('Invalid media sources')
+                for entry in settings['audio']+settings['visual']:
                     if not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}',entry.get('id','')):raise ValueError('Invalid media source ID')
                 ident=secrets.token_hex(16)
                 fixed_renders[ident]=FixedFrameRender(Path(temp.name)/('fixed-'+ident),settings,encoder)
@@ -168,6 +168,13 @@ class Handler(BaseHTTPRequestHandler):
                 session=fixed_renders[ident]
                 session.source(key,self.rfile,int(self.headers.get('Content-Length','0')))
                 return self.reply(dict(ok=True))
+            if not post and route.startswith('/api/render/video/'):
+                parts=route.split('/')
+                if len(parts)!=6:raise ValueError('Invalid video frame route')
+                _,_,_,_,ident,key=parts
+                timestamp=float(qs.get('t',['nan'])[0])
+                jpeg=fixed_renders[ident].video_frame(key,timestamp)
+                return self.reply(jpeg,'image/jpeg')
             if post and route.startswith('/api/render/frames/'):
                 ident=route.split('/')[-1]
                 count=fixed_renders[ident].frames(self.rfile,int(self.headers.get('Content-Length','0')))

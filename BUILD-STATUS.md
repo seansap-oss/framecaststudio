@@ -1,4 +1,10 @@
-# FrameCast Studio v0.11.2 — working development checkpoint
+# FrameCast Studio v0.11.3 — working development checkpoint
+
+## Local export seek failure repair (v0.11.3)
+
+The v0.11.1/v0.11.2 fixed-frame exporter still called `video.currentTime` for every output frame. Chrome could hang while seeking an active source, as the user's screenshot shows at 16.73 seconds. The local FFmpeg bridge now accepts the original video source and keeps a sequential decoder alive. The browser receives individual decoded frames for the compositor; it no longer seeks Chrome video elements while rendering. Backward timeline jumps restart the decoder. The existing timeline compositor, titles, overlays, and audio mix remain in use.
+
+**Verified here:** 17 Node tests, 9 Python tests, local FFmpeg source-frame HTTP requests (repeat, forward, backward) and final video/audio frame-count export. A full interactive export in Chrome on the user's Windows hardware is still unverified; the sandbox browser could not launch. This is a specific repair for the reported seek timeout, not a claim that long 4K exports or all formats are production ready. Local FFmpeg and FFprobe are required for this path.
 
 ## Logo animation discovery fix (v0.11.2)
 

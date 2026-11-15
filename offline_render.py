@@ -1,11 +1,72 @@
 """Fixed-frame local renderer. Frames arrive in timeline order; FFmpeg never watches the UI clock."""
 import json
 import math
+import os
 import shutil
 import struct
 import subprocess
 import threading
 from pathlib import Path
+
+
+class VideoFrameSource:
+    """Keep one sequential FFmpeg decoder alive instead of seeking Chrome per frame."""
+    def __init__(self, path, fps, log):
+        self.path, self.fps, self.log = path, fps, log
+        self.process = None
+        self.origin = 0
+        self.index = -1
+        self.pending = b''
+        self.last = None
+        self.lock = threading.Lock()
+
+    def close(self):
+        if self.process:
+            if self.process.poll() is None: self.process.kill()
+            self.process.wait()
+            self.process.stdout.close()
+            self.process = None
+        self.pending = b''
+
+    def restart(self, target):
+        self.close()
+        self.origin = target
+        self.index = -1
+        self.last = None
+        self.process = subprocess.Popen(
+            ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error',
+             '-ss', f'{target:.8f}', '-i', str(self.path), '-an',
+             '-vf', f'fps={self.fps}', '-f', 'image2pipe', '-vcodec', 'mjpeg', 'pipe:1'],
+            stdout=subprocess.PIPE, stderr=self.log)
+
+    def next_jpeg(self):
+        while True:
+            begin = self.pending.find(b'\xff\xd8')
+            if begin >= 0:
+                end = self.pending.find(b'\xff\xd9', begin + 2)
+                if end >= 0:
+                    result = self.pending[begin:end + 2]
+                    self.pending = self.pending[end + 2:]
+                    return result
+                if begin: self.pending = self.pending[begin:]
+            elif len(self.pending) > 1:
+                self.pending = self.pending[-1:]
+            block = os.read(self.process.stdout.fileno(), 65536)
+            if not block: raise ValueError('FFmpeg could not decode a source video frame')
+            self.pending += block
+
+    def frame(self, target):
+        with self.lock:
+            if not self.process or target < self.origin - .25 / self.fps or target - self.origin > 20:
+                self.restart(target)
+            wanted = round((target - self.origin) * self.fps)
+            if wanted < self.index:
+                self.restart(target)
+                wanted = 0
+            while self.index < wanted:
+                self.last = self.next_jpeg()
+                self.index += 1
+            return self.last
 
 
 def video_options(fmt, preset, codec, encoder, speed='Balanced'):
@@ -29,6 +90,7 @@ class FixedFrameRender:
         self.total = math.ceil((settings['end'] - settings['start']) * settings['fps'] - 1e-8)
         self.count = 0
         self.sources = {}
+        self.video_decoders = {}
         self.process = None
         self.mux_process = None
         self.lock = threading.Lock()
@@ -37,7 +99,7 @@ class FixedFrameRender:
         self.log = (self.root / 'ffmpeg.log').open('wb')
 
     def source(self, key, stream, size):
-        if self.process or key not in {entry['id'] for entry in self.settings['audio']}:
+        if self.process or key not in {entry['id'] for entry in self.settings['audio'] + self.settings.get('visual', [])}:
             raise ValueError('Unknown or late media source')
         if key in self.sources: raise ValueError('Media source already uploaded')
         if not 0 < size <= 30 * 1024**3: raise ValueError('Invalid media size')
@@ -49,6 +111,17 @@ class FixedFrameRender:
                 target.write(block)
                 size -= len(block)
         self.sources[key] = path
+
+    def video_frame(self, key, timestamp):
+        if self.cancelled or key not in {entry['id'] for entry in self.settings.get('visual', [])}:
+            raise ValueError('Unknown video source')
+        if not math.isfinite(timestamp) or timestamp < 0:
+            raise ValueError('Invalid video timestamp')
+        path = self.sources.get(key)
+        if not path: raise ValueError('Upload video source before rendering')
+        if key not in self.video_decoders:
+            self.video_decoders[key] = VideoFrameSource(path, self.settings['fps'], self.log)
+        return self.video_decoders[key].frame(timestamp)
 
     def start_encoder(self):
         s = self.settings
@@ -163,6 +236,7 @@ class FixedFrameRender:
     def cancel(self):
         with self.lock:
             self.cancelled = True
+            for decoder in self.video_decoders.values(): decoder.close()
             if self.process and self.process.poll() is None:
                 self.process.kill()
                 self.process.wait()

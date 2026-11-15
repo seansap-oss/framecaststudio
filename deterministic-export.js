@@ -11,10 +11,17 @@ function renderAudioSources(){
    volume:l.volume??100,mute:!!l.muted,bus:l.bus||'clip',url:media.currentSrc||media.src}];
  });
 }
+function renderVisualSources(){
+ return Object.entries(assets).filter(([id,media])=>{
+  const layer=layers[id];
+  return media?.tagName==='VIDEO'&&layer&&!layer.removed&&media.src;
+ }).map(([id,media])=>({id,media,url:media.currentSrc||media.src}));
+}
 function fixedSettings(){
  const start=renderStart,end=renderEnd??total();
  return {start,end,fps:+$('exportFps').value,format:$('container').value.toLowerCase(),
   quality:$('quality').value,speed:$('encodingSpeed').value,codec:$('videoCodec').value,audio:renderAudioSources().map(({url,...rest})=>rest),
+  visual:renderVisualSources().map(({id})=>({id})),
   clip:+$('Clip').value,bed:+$('Bed').value,master:+$('Master').value,
   bass:+$('Bass').value,equalizer:+$('Mid').value,treble:+$('Treble').value,
   hum:parseInt($('hum').value)||0,noise:(parseInt($('noise').value)||0)*1000,
@@ -23,12 +30,36 @@ function fixedSettings(){
 async function exactFrame(at){
  time=at;
  const videos=FrameCastFrameSeek.active(clips,assets,layers,at);
- await Promise.all([...videos].map(([media,sourceTime])=>FrameCastFrameSeek.seek(media,sourceTime,fixedRequest.signal)));
+ const replacements=new Map();
+ const sources=renderVisualSources();
+ try{
+ for(const [media,sourceTime] of videos){
+  const source=sources.find(item=>item.media===media);
+  if(!source)throw Error('Video source missing from local renderer');
+  const safeTime=Math.max(0,Math.min(sourceTime,media.duration-1/(+$('exportFps').value)));
+  const response=await fetch('/api/render/video/'+fixedSession+'/'+encodeURIComponent(source.id)+'?t='+encodeURIComponent(safeTime),{signal:fixedRequest.signal});
+  if(!response.ok){const error=await response.json();throw Error(error.error||'Source frame decode failed')}
+  const url=URL.createObjectURL(await response.blob());
+  try{
+   const image=new Image();image.src=url;await image.decode();
+   image.readyState=4;
+   replacements.set(media,{image,url});
+  }catch(e){URL.revokeObjectURL(url);throw e}
+ }
  if(typeof prepareAnimatedImages==='function')await prepareAnimatedImages(at);
- if(fixedCancel)throw Error('Render cancelled');
- // The browser has completed each seek; the compositor uses the explicit timestamp.
- draw();
- return new Promise((resolve,reject)=>monitor.toBlob(blob=>blob?resolve(blob):reject(Error('Frame encoding failed')),'image/png'));
+  if(fixedCancel)throw Error('Render cancelled');
+  // Substitute decoded FFmpeg frames just while composing this timeline timestamp.
+  for(const clip of clips)if(replacements.has(clip.media))clip.media=replacements.get(clip.media).image;
+  for(const [key,media] of Object.entries(assets))if(replacements.has(media))assets[key]=replacements.get(media).image;
+  draw();
+  return await new Promise((resolve,reject)=>monitor.toBlob(blob=>blob?resolve(blob):reject(Error('Frame encoding failed')),'image/png'));
+ }finally{
+  for(const [old,{image,url}] of replacements){
+   for(const clip of clips)if(clip.media===image)clip.media=old;
+   for(const [key,media] of Object.entries(assets))if(media===image)assets[key]=old;
+   URL.revokeObjectURL(url);
+  }
+ }
 }
 async function fixedJson(path,body,signal){
  const response=await fetch(path,{method:'POST',body,signal,headers:body instanceof Blob?{}:{'Content-Type':'application/json'}});
@@ -69,7 +100,7 @@ render=async function(){
   lock(true);dimensions();
   const started=await fixedJson('/api/render/start',JSON.stringify(settings),fixedRequest.signal);
   id=fixedSession=started.id;
-  const sources=renderAudioSources();
+  const sources=[...new Map([...renderAudioSources(),...renderVisualSources()].map(source=>[source.id,source])).values()];
   for(const source of sources){
    await fixedGate();
    $('jobStatus').value='Preparing audio source · '+source.id;
