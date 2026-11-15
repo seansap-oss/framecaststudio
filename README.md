@@ -1,4 +1,4 @@
-# FrameCast Studio v0.11.0
+# FrameCast Studio v0.11.1
 
 A local-first video graphics editor with a multitrack timeline and local Live/Signage workspaces. Development checkpoint; read [BUILD-STATUS.md](BUILD-STATUS.md) for tested behaviour and remaining work.
 
@@ -6,17 +6,23 @@ A local-first video graphics editor with a multitrack timeline and local Live/Si
 
 ## Windows / your existing VS Code terminal
 
-Stop the old server with **Ctrl+C** in the existing VS Code terminal. Download the v0.11.0 ZIP, then run:
+Stop the old server with **Ctrl+C** in the existing VS Code terminal. Download the v0.11.1 ZIP, then run:
 
 ```powershell
 Set-Location D:\Framecaststudio
+$archive = Get-ChildItem "$env:USERPROFILE\Downloads" -Filter "framecaststudio-workbench-v0.11.1*.zip" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $archive) { throw "Download the GitHub v0.11.1 ZIP first" }
 $backup = "D:\Framecaststudio-backup-$(Get-Date -Format yyyyMMdd-HHmmss)"
 Copy-Item -LiteralPath D:\Framecaststudio -Destination $backup -Recurse
-Expand-Archive -LiteralPath "$env:USERPROFILE\Downloads\FrameCast-Studio-v0.11.0.zip" -DestinationPath D:\Framecaststudio -Force
+$unpack = Join-Path $env:TEMP "FrameCast-v0111-$(Get-Date -Format yyyyMMddHHmmss)"
+Expand-Archive -LiteralPath $archive.FullName -DestinationPath $unpack -Force
+$source = Get-ChildItem -LiteralPath $unpack -Directory | Select-Object -First 1
+Copy-Item -Path (Join-Path $source.FullName '*') -Destination D:\Framecaststudio -Recurse -Force
+Select-String -Path D:\Framecaststudio\index.html -Pattern 'v0.11.1'
 py server.py
 ```
 
-Open **http://localhost:4173**, press **Ctrl+F5**, and confirm **v0.11.0** in the header. Keep the existing VS Code window. The ZIP leaves local media and `publish-settings.json` untouched. Python 3.10+ and FFmpeg/FFprobe on PATH are required for fixed-frame local export; without them, the old browser real-time export remains as a fallback.
+Open **http://localhost:4173**, press **Ctrl+F5**, and confirm **v0.11.1** in the header. Keep the existing VS Code window. The ZIP leaves local media and `publish-settings.json` untouched. Python 3.10+ and FFmpeg/FFprobe on PATH are required for fixed-frame local export; without them, the old browser real-time export remains as a fallback.
 
 ## Ticker inspector update
 
@@ -64,6 +70,10 @@ In Export & share, choose MP4/MOV/WebM and a Video codec. Local FFmpeg offers H.
 
 In your existing Windows PowerShell terminal, check codecs with `ffmpeg -hide_banner -encoders | Select-String "libx264|libx265|libsvtav1|libaom-av1"`. If FFmpeg is absent, install an official build that includes the desired encoders, restart the terminal and FrameCast. The ZIP does not contain an FFmpeg binary.
 
-## v0.11.0 export engine
+## v0.11.1 export engine
 
 The local FFmpeg path requests each output frame at a fixed timeline timestamp, sends lossless PNGs in small batches, encodes once, then mixes source audio and checks the output frame count. Use MP4/H.264 High for broad playback and publishing compatibility. Pause stops between frame batches; Cancel stops the local encoder. Browser-only and static Vercel exports still use real-time recording. One-hour and 4K projects have not passed hardware endurance testing; per-clip keyframed volume is not yet reproduced in the new server mix. See BUILD-STATUS.md.
+
+## v0.11.1 image motion and export correction
+
+Upload an image as a timeline layer. The selected Image animation section includes masks, motion, cycle duration, direction, repeat, entrance/exit and layer duration or Until video ends. Animated GIF frames use Chrome ImageDecoder and timeline timestamps. Other browsers show a clear unsupported message on GIF import. Export ranges now use an actual select element. Fixed-frame export seeks only active video sources and reports the time if a current source fails to seek. Encoding speed offers Fast, Balanced and Quality; Fast changes only the encoding preset and cannot eliminate slow browser decoding of each frame. See BUILD-STATUS.md for verification limits.

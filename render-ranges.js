@@ -4,7 +4,10 @@ const rangeTools=el('section');rangeTools.className='rangeTools';rangeTools.inne
 document.querySelector('.timelineHint').after(rangeTools);
 const renderActions=el('div');renderActions.className='actions renderActions';renderActions.innerHTML='<button id="pauseRender" disabled>Pause render</button><button id="cancelRender" disabled>Cancel render</button>';
 $('progress').after(renderActions);
-$('progress').before(row('Export section','<select id="rangeChoice"><option value="all">Whole video</option></select>'));
+const rangeChoiceRow=document.createElement('label');rangeChoiceRow.className='row';
+const rangeChoiceTitle=el('span','Export section');
+const rangeChoice=el('select');rangeChoice.id='rangeChoice';rangeChoice.add(new Option('Whole video','all'));
+rangeChoiceRow.append(rangeChoiceTitle,rangeChoice);$('progress').before(rangeChoiceRow);
 let pendingIn=null;
 const rangeStatus=el('output','No range marked. Set In, then Set Out.');rangeStatus.id='rangeStatus';rangeTools.querySelector('.rangeHeading').append(rangeStatus);
 function paintRanges(){

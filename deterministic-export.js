@@ -14,26 +14,17 @@ function renderAudioSources(){
 function fixedSettings(){
  const start=renderStart,end=renderEnd??total();
  return {start,end,fps:+$('exportFps').value,format:$('container').value.toLowerCase(),
-  quality:$('quality').value,codec:$('videoCodec').value,audio:renderAudioSources().map(({url,...rest})=>rest),
+  quality:$('quality').value,speed:$('encodingSpeed').value,codec:$('videoCodec').value,audio:renderAudioSources().map(({url,...rest})=>rest),
   clip:+$('Clip').value,bed:+$('Bed').value,master:+$('Master').value,
   bass:+$('Bass').value,equalizer:+$('Mid').value,treble:+$('Treble').value,
   hum:parseInt($('hum').value)||0,noise:(parseInt($('noise').value)||0)*1000,
   compress:$('compress').checked,threshold:+$('threshold').value,ratio:+$('compRatio').value};
 }
-function waitForFrame(media){
- if(!media.seeking)return Promise.resolve();
- return new Promise((resolve,reject)=>{
-  const timer=setTimeout(()=>{cleanup();reject(Error('Source video seek timed out'))},20000);
-  function cleanup(){clearTimeout(timer);media.removeEventListener('seeked',done);media.removeEventListener('error',fail)}
-  function done(){cleanup();resolve()}
-  function fail(){cleanup();reject(Error('Video decode failed during export'))}
-  media.addEventListener('seeked',done,{once:true});media.addEventListener('error',fail,{once:true});
- });
-}
 async function exactFrame(at){
- time=at;syncMedia(true);
- const videos=[...clips.map(c=>c.media),...Object.values(assets)].filter(m=>m?.tagName==='VIDEO');
- await Promise.all([...new Set(videos)].map(waitForFrame));
+ time=at;
+ const videos=FrameCastFrameSeek.active(clips,assets,layers,at);
+ await Promise.all([...videos].map(([media,sourceTime])=>FrameCastFrameSeek.seek(media,sourceTime,fixedRequest.signal)));
+ if(typeof prepareAnimatedImages==='function')await prepareAnimatedImages(at);
  if(fixedCancel)throw Error('Render cancelled');
  // The browser has completed each seek; the compositor uses the explicit timestamp.
  draw();
@@ -86,14 +77,15 @@ render=async function(){
    const response=await fetch('/api/render/source/'+id+'/'+source.id,{method:'POST',body:blob,signal:fixedRequest.signal});
    if(!response.ok)throw Error((await response.json()).error||'Media upload failed');
   }
-  const batch=[];
+  const batch=[],began=performance.now();
   for(let i=0;i<started.frames;i++){
    await fixedGate();
    batch.push(await exactFrame(settings.start+i/settings.fps));
    if(batch.length===4||i===started.frames-1){await sendFrames(id,batch);batch.length=0}
    const p=Math.floor((i+1)/started.frames*95);
    $('progress').value=p;
-   $('jobStatus').value='Rendering fixed frames · '+(i+1)+' / '+started.frames+' · '+p+'%';
+   const remaining=Math.max(0,Math.round((performance.now()-began)/(i+1)*(started.frames-i-1)/1000));
+   $('jobStatus').value='Rendering fixed frames · '+(i+1)+' / '+started.frames+' · '+p+'% · about '+fmt(remaining)+' remaining';
    notify('Rendering '+currentRatio+' · '+p+'%');
   }
   await fixedGate();

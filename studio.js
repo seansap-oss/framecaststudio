@@ -149,7 +149,7 @@ function timeline(){
 
 }
 $('import').onclick=$('addClips').onclick=()=>$('videos').click();$('music').onclick=$('addSound').onclick=()=>$('sounds').click();
-async function loadImage(url){const im=new Image();im.src=url;await im.decode();return im}
+async function loadImage(url){const im=new Image();im.src=url;await im.decode();if(typeof prepareGif==='function')await prepareGif(im,url);return im}
 $('backdrop').onchange=async e=>{if(e.target.files[0])background=await loadImage(URL.createObjectURL(e.target.files[0]))};
 $('graphicFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const key=['Logo','Ad','Watermark'].includes($('layer').value)?$('layer').value:'Ad';const url=URL.createObjectURL(f);const asset=f.type.startsWith('video')?await loadMedia(url,'video'):await loadImage(url);if(asset.tagName==='VIDEO'){asset.muted=true;if(key!=='Ad')throw Error('Select Ad for a video overlay')}assets[key]?.pause?.();assets[key]=asset;layers[key].visible=true;$('layer').value=key;inspect();timeline()}catch(err){notify(err.message)}};
 const keyCanvas=document.createElement('canvas'),keyCtx=keyCanvas.getContext('2d',{willReadFrequently:true});

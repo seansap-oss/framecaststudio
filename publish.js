@@ -2,7 +2,7 @@
 let bridge=false;
 let bridgeInfo={ffmpeg:false};
 const formatPanel=el('section');
-formatPanel.innerHTML=row('File format',select('container',['MP4','MOV','WebM']))+row('Video codec','<select id="videoCodec"></select>')+row('Compression',select('quality',['High','Balanced','Small']))+row('Export frame rate',select('exportFps',['60','30']))+'<p id="encoderState" class="helpText">Checking available encoders…</p>';
+formatPanel.innerHTML=row('File format',select('container',['MP4','MOV','WebM']))+row('Video codec','<select id="videoCodec"></select>')+row('Compression',select('quality',['High','Balanced','Small']))+row('Encoding speed',select('encodingSpeed',['Fast','Balanced','Quality']))+row('Export frame rate',select('exportFps',['60','30']))+'<p id="encoderState" class="helpText">Checking available encoders…</p>';
 $('settingsHost').before(formatPanel);
 const accountPanel=el('details');accountPanel.open=true;
 accountPanel.innerHTML='<summary>Connected publishing</summary><div class="actions"><button id="googleLogin">Connect YouTube</button><button id="metaLogin">Connect Facebook & Instagram</button><button id="refreshLogin">Check connection</button></div><p id="accountState" role="status"></p>'+row('Facebook Page','<select id="pageAccount"></select>')+row('YouTube visibility',select('privacy',['private','unlisted','public']));

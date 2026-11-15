@@ -10,7 +10,7 @@ from functools import lru_cache
 
 ROOT = Path(__file__).resolve().parent
 ORIGIN = 'http://localhost:4173'
-PUBLIC = {'index.html','studio.css','studio.js','timeline.js','layers.js','tracks.js','sample.js','publish.js','editing.js','workspace.js','image-editing.js','editor-core.js','editor-workspace.js','editor-workspace.css','ticker-inspector.js','render-ranges.js','deterministic-export.js'}
+PUBLIC = {'index.html','studio.css','studio.js','timeline.js','layers.js','tracks.js','sample.js','publish.js','editing.js','workspace.js','image-editing.js','editor-core.js','editor-workspace.js','editor-workspace.css','ticker-inspector.js','render-ranges.js','frame-seek.js','deterministic-export.js'}
 CONFIG = ROOT/'publish-settings.json'
 cfg = json.loads(CONFIG.read_text(encoding='utf-8-sig')) if CONFIG.exists() else {}
 temp = tempfile.TemporaryDirectory()
@@ -147,13 +147,13 @@ class Handler(BaseHTTPRequestHandler):
                 if 'code' not in qs: raise ValueError('Sign-in cancelled or denied. Return to FrameCast and reconnect.')
                 oauth(provider,qs['code'][0]);return self.reply('Account connected. Close this tab and refresh accounts in FrameCast.','text/plain')
             if not post and route=='/api/health':
-                return self.reply(dict(service='framecast-local',version='0.11.0',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
+                return self.reply(dict(service='framecast-local',version='0.11.1',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
             if post and route=='/api/render/start':
                 if not shutil.which('ffmpeg') or not shutil.which('ffprobe'): raise ValueError('Install FFmpeg and FFprobe for fixed-frame export')
                 size=int(self.headers.get('Content-Length','0'))
                 if not 0<size<=131072:raise ValueError('Invalid render settings size')
                 settings=json.loads(self.rfile.read(size))
-                if settings.get('format') not in CODEC_FORMATS or settings.get('quality') not in ('High','Balanced','Small'):raise ValueError('Unknown output format or quality')
+                if settings.get('format') not in CODEC_FORMATS or settings.get('quality') not in ('High','Balanced','Small') or settings.get('speed','Balanced') not in ('Fast','Balanced','Quality'):raise ValueError('Unknown output format, quality or speed')
                 encoder=available_encoders()[resolve_codec(settings['format'],settings.get('codec'))]
                 fps=settings.get('fps');start=settings.get('start');end=settings.get('end')
                 if fps not in (30,60) or not all(isinstance(v,(int,float)) and __import__('math').isfinite(v) for v in (start,end)) or not 0<=start<end<=86400:raise ValueError('Invalid render time or frame rate')

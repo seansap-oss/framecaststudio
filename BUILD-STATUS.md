@@ -1,4 +1,12 @@
-# FrameCast Studio v0.11.0 — working development checkpoint
+# FrameCast Studio v0.11.1 — working development checkpoint
+
+## Export repair and reusable image motion (v0.11.1)
+
+The supplied Chrome screenshot showed two distinct errors in v0.11.0: Export section displayed literal HTML and `render-ranges.js` threw because the range selector did not exist; the fixed-frame export then failed with “Source video seek timed out.” The selector is now a real DOM element. The local export seeks only video sources visible at a given frame, preserves the main clip's source trim, skips redundant seeks, and gives the failing source time when an active video still cannot decode. This resolves the inactive-source wait path; an unsupported or corrupted active source can still fail.
+
+Uploaded images now have per-layer shape masks (original/circle/square/rounded/shield), timed spin/flips/sway/float/pulse, direction, repeat, entrance and exit, and a duration or Until video ends. Their settings are stored on the layer and used by the existing canvas renderer, including fixed-frame export. Chrome ImageDecoder selects animated GIF frames by timeline time; browser support and large GIF performance still require on-device checks. Fast/Balanced/Quality encoder speed presets affect software encoding, not the per-frame browser decode cost.
+
+**Verification:** JavaScript syntax and static build; 16 Node tests including active/inactive seek behavior; 8 Python service/encoding tests. **Not yet verified:** interactive image/GIF effects in the user's Chrome, the user's failed media seek, long 1080p/4K exports, or actual elapsed-time improvement on their Ryzen laptop. Browser launch in this workspace is blocked. Licensing and desktop packaging are planned, not implemented in v0.11.1.
 
 ## Fixed-frame local export (v0.11.0)
 

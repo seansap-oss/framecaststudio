@@ -8,14 +8,15 @@ import threading
 from pathlib import Path
 
 
-def video_options(fmt, preset, codec, encoder):
+def video_options(fmt, preset, codec, encoder, speed='Balanced'):
     quality = {'h264': (29, 23, 18), 'hevc': (30, 25, 20), 'av1': (38, 30, 24), 'vp9': (38, 32, 26)}[codec][('Small', 'Balanced', 'High').index(preset)]
     args = ['-c:v', encoder, '-crf', str(quality), '-pix_fmt', 'yuv420p', '-threads', '2']
-    if codec == 'h264': args += ['-preset', 'medium']
-    elif codec == 'hevc': args += ['-preset', 'medium', '-x265-params', 'pools=2:frame-threads=2:log-level=error', '-tag:v', 'hvc1']
-    elif encoder == 'libsvtav1': args += ['-preset', '8', '-svtav1-params', 'lp=2']
-    elif codec == 'av1': args += ['-b:v', '0', '-cpu-used', '6']
-    else: args += ['-b:v', '0', '-deadline', 'good', '-cpu-used', '4']
+    if speed not in ('Fast','Balanced','Quality'):raise ValueError('Invalid encoding speed')
+    if codec == 'h264': args += ['-preset', {'Fast':'veryfast','Balanced':'medium','Quality':'slow'}[speed]]
+    elif codec == 'hevc': args += ['-preset', {'Fast':'fast','Balanced':'medium','Quality':'slow'}[speed], '-x265-params', 'pools=2:frame-threads=2:log-level=error', '-tag:v', 'hvc1']
+    elif encoder == 'libsvtav1': args += ['-preset', {'Fast':'10','Balanced':'8','Quality':'6'}[speed], '-svtav1-params', 'lp=2']
+    elif codec == 'av1': args += ['-b:v', '0', '-cpu-used', {'Fast':'8','Balanced':'6','Quality':'4'}[speed]]
+    else: args += ['-b:v', '0', '-deadline', 'good', '-cpu-used', {'Fast':'6','Balanced':'4','Quality':'2'}[speed]]
     return args
 
 
@@ -53,7 +54,7 @@ class FixedFrameRender:
         s = self.settings
         cmd = ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
                '-f', 'image2pipe', '-framerate', str(s['fps']), '-vcodec', 'png', '-i', 'pipe:0',
-               '-an', *video_options(s['format'], s['quality'], s['codec'], self.encoder), str(self.silent)]
+               '-an', *video_options(s['format'], s['quality'], s['codec'], self.encoder,s.get('speed','Balanced')), str(self.silent)]
         self.process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=self.log)
 
     def frames(self, stream, size):

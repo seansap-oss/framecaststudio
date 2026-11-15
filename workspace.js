@@ -77,7 +77,7 @@ function graphic(key,l){
  const g=l.grade,asset=assets[key];
  if(!g||($('gradeBefore').checked&&key===selectedLayer&&!busy)){graphicRaw(key,l);return}
  const grade={...gradeDefaults,...g};ctx.save();ctx.filter='saturate('+(1+grade.saturation/100)+') hue-rotate('+grade.hue+'deg)';
- const eligible=asset&&['VIDEO','IMG'].includes(asset.tagName)&&(asset.tagName!=='VIDEO'||asset.readyState>=2);
+ const eligible=asset&&['VIDEO','IMG','CANVAS'].includes(asset.tagName)&&(asset.tagName!=='VIDEO'||asset.readyState>=2);
  try{
   if(eligible){const result=processedAsset(asset,grade);assets[key]=result;graphicRaw(key,l)}
   else graphicRaw(key,l);
