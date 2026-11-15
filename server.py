@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlencode, urlparse, parse_qs
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+from functools import lru_cache
 
 ROOT = Path(__file__).resolve().parent
 ORIGIN = 'http://localhost:4173'
@@ -13,6 +14,7 @@ CONFIG = ROOT/'publish-settings.json'
 cfg = json.loads(CONFIG.read_text(encoding='utf-8-sig')) if CONFIG.exists() else {}
 temp = tempfile.TemporaryDirectory()
 renders, states, jobs, tokens = {}, {}, {}, {}
+render_codecs = {}
 graph = 'https://graph.facebook.com/'+cfg.get('meta_version','v25.0')
 lock = threading.Lock()
 
@@ -45,10 +47,35 @@ def oauth(provider, code):
         pages=http(graph+'/me/accounts?fields=id,name,access_token,instagram_business_account&limit=100',headers=auth(t['access_token']))['data']
         if not pages: raise ValueError('No accessible Facebook Pages returned')
         tokens['pages']={p['id']:p for p in pages}
-def encode(src,dst,fmt,preset,fps=60):
-    quality={'Small':29,'Balanced':23,'High':18}[preset]
-    codec=['-c:v','libx264','-crf',str(quality),'-preset','medium','-c:a','aac','-ar','48000','-b:a','192k','-movflags','+faststart']
-    if fmt=='webm': codec=['-c:v','libvpx-vp9','-crf',str(quality+9),'-b:v','0','-deadline','realtime','-cpu-used','6','-c:a','libopus']
+@lru_cache(maxsize=1)
+def available_encoders():
+    if not shutil.which('ffmpeg'): return {}
+    try:
+        output=subprocess.check_output(['ffmpeg','-hide_banner','-encoders'],text=True,stderr=subprocess.DEVNULL,timeout=10)
+        names={line.split()[1] for line in output.splitlines() if len(line.split())>1}
+        candidates={'h264':['libx264'],'hevc':['libx265'],'av1':['libsvtav1','libaom-av1'],'vp9':['libvpx-vp9']}
+        return {k:next(n for n in v if n in names) for k,v in candidates.items() if any(n in names for n in v)}
+    except (OSError,subprocess.SubprocessError): return {}
+
+CODEC_FORMATS={'mp4':('h264','hevc','av1'),'mov':('h264','hevc'),'webm':('vp9','av1')}
+def resolve_codec(fmt,codec=None):
+    codec=codec or ('vp9' if fmt=='webm' else 'h264')
+    if codec not in CODEC_FORMATS.get(fmt,()): raise ValueError('Codec is not supported in this file format')
+    if codec not in available_encoders(): raise ValueError('This FFmpeg build does not include '+codec+'. Install a full FFmpeg build and restart FrameCast.')
+    return codec
+
+def encode(src,dst,fmt,preset,fps=60,video_codec=None):
+    selected=resolve_codec(fmt,video_codec);encoder=available_encoders()[selected]
+    if fps not in (30,60) or preset not in ('Small','Balanced','High'): raise ValueError('Invalid export settings')
+    quality={'h264':(29,23,18),'hevc':(30,25,20),'av1':(38,30,24),'vp9':(38,32,26)}[selected][('Small','Balanced','High').index(preset)]
+    codec=['-c:v',encoder,'-crf',str(quality),'-threads','2']
+    if selected=='h264': codec+=['-preset','medium']
+    elif selected=='hevc': codec+=['-preset','medium','-x265-params','pools=2:frame-threads=2:log-level=error','-tag:v','hvc1']
+    elif encoder=='libsvtav1': codec+=['-preset','8','-svtav1-params','lp=2']
+    elif selected=='av1': codec+=['-b:v','0','-cpu-used','6']
+    else: codec+=['-b:v','0','-deadline','good','-cpu-used','4']
+    codec+=['-c:a','libopus' if fmt=='webm' else 'aac','-ar','48000','-b:a','192k']
+    if fmt!='webm': codec+=['-movflags','+faststart']
     subprocess.run(['ffmpeg','-nostdin','-v','error','-y','-protocol_whitelist','file,pipe','-f',('mov' if src.suffix=='.mp4' else 'matroska'),'-i',str(src),'-map','0:v:0','-map','0:a:0?','-pix_fmt','yuv420p',*codec,'-r',str(fps),'-fps_mode','cfr',str(dst)],check=True)
 def google_token():
     t=tokens['google']
@@ -118,7 +145,7 @@ class Handler(BaseHTTPRequestHandler):
                 if 'code' not in qs: raise ValueError('Sign-in cancelled or denied. Return to FrameCast and reconnect.')
                 oauth(provider,qs['code'][0]);return self.reply('Account connected. Close this tab and refresh accounts in FrameCast.','text/plain')
             if not post and route=='/api/health':
-                return self.reply(dict(service='framecast-local',version='0.10.3',ffmpeg=bool(shutil.which('ffmpeg'))))
+                return self.reply(dict(service='framecast-local',version='0.10.4',ffmpeg=bool(shutil.which('ffmpeg')),encoders=available_encoders()))
             if not post and route=='/api/accounts':
                 return self.reply(dict(configured={p:bool(cfg.get(p+'_id') and cfg.get(p+'_secret')) for p in ('meta','google')},youtube=tokens.get('google',{}).get('name'),pages=[dict(id=p['id'],name=p['name'],instagram=bool(p.get('instagram_business_account'))) for p in tokens.get('pages',{}).values()]))
             if post and route.startswith('/api/connect/'):
@@ -136,6 +163,7 @@ class Handler(BaseHTTPRequestHandler):
             if post and route=='/api/encode':
                 fmt=qs['format'][0];preset=qs['quality'][0]
                 if fmt not in ('mp4','mov','webm') or preset not in ('High','Balanced','Small'): raise ValueError('Unknown encoding preset')
+                video_codec=resolve_codec(fmt,qs.get('codec',[None])[0])
                 ident=secrets.token_hex(16);dst=Path(temp.name)/(ident+'.'+fmt);src=Path(temp.name)/(ident+'.source.'+('mp4' if 'mp4' in self.headers.get('Content-Type','') else 'webm'))
                 remaining=int(self.headers['Content-Length'])
                 try:
@@ -144,7 +172,7 @@ class Handler(BaseHTTPRequestHandler):
                             part=self.rfile.read(min(1048576,remaining))
                             if not part:raise ValueError('Incomplete recording')
                             f.write(part);remaining-=len(part)
-                    encode(src,dst,fmt,preset,60 if qs.get('fps',['60'])[0]=='60' else 30);renders[ident]=dst
+                    encode(src,dst,fmt,preset,60 if qs.get('fps',['60'])[0]=='60' else 30,video_codec);renders[ident]=dst;render_codecs[ident]=video_codec
                 finally:src.unlink(missing_ok=True)
                 return self.reply(dict(id=ident,bytes=dst.stat().st_size))
             if not post and route.startswith('/media/'):
@@ -156,6 +184,7 @@ class Handler(BaseHTTPRequestHandler):
                 if n>65536:raise ValueError('Metadata too large')
                 m=json.loads(self.rfile.read(n));asset=m['asset'];platform=m['platform']
                 if renders[asset].suffix!='.mp4':raise ValueError('Render MP4 for publishing')
+                if render_codecs.get(asset,'h264')!='h264':raise ValueError('Use H.264 MP4 for the current publishing integration. This codec export is available for download.')
                 if platform not in ('Instagram Reels','Facebook Page Reels','YouTube','YouTube Shorts'):raise ValueError('Unknown destination')
                 if m.get('privacy') not in ('private','unlisted','public'):raise ValueError('Select visibility')
                 if platform.startswith('YouTube') and not tokens.get('google'):raise ValueError('Connect YouTube first')

@@ -41,8 +41,16 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('GET', '/api/health')
         self.assertEqual(code, 200)
         self.assertEqual(data['service'], 'framecast-local')
-        self.assertEqual(data['version'], '0.10.3')
+        self.assertEqual(data['version'], '0.10.4')
         self.assertIsInstance(data['ffmpeg'], bool)
+
+    def test_invalid_codec_format_is_rejected(self):
+        with self.assertRaises(ValueError):
+            app.resolve_codec('webm','hevc')
+        with self.assertRaises(ValueError):
+            app.resolve_codec('mov','av1')
+        with self.assertRaises(ValueError):
+            app.resolve_codec('mp4','unknown')
 
     def test_local_credentials_are_not_served(self):
         self.assertEqual(self.request('GET', '/publish-settings.json')[0], 404)
@@ -62,10 +70,12 @@ class ServiceTests(unittest.TestCase):
             subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=160x90:r=30',
                 '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000', '-t', '1',
                 '-c:v', 'libvpx', '-c:a', 'libopus', str(source)], check=True)
-            for extension, video, audio in [('mp4','h264','aac'), ('mov','h264','aac'), ('webm','vp9','opus')]:
+            for extension, video, audio in [('mp4','h264','aac'), ('mov','h264','aac'), ('webm','vp9','opus'), ('mp4','hevc','aac'), ('mov','hevc','aac'), ('mp4','av1','aac'), ('webm','av1','opus')]:
+                if video not in app.available_encoders():
+                    continue
                 with self.subTest(format=extension):
                     target = Path(folder) / ('output.' + extension)
-                    app.encode(source, target, extension, 'Balanced')
+                    app.encode(source, target, extension, 'Balanced',60,video)
                     data = json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(target)]))
                     codecs = {s['codec_type']: s['codec_name'] for s in data['streams']}
                     self.assertEqual(codecs, {'video':video, 'audio':audio})
