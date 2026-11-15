@@ -9,6 +9,10 @@ import threading
 from pathlib import Path
 
 
+class CleanVideoEnd(EOFError):
+    """No bytes for the next frame; unlike an incomplete/corrupt PNG."""
+
+
 class VideoFrameSource:
     """Keep one sequential FFmpeg decoder alive instead of seeking Chrome per frame."""
     def __init__(self, path, fps, log):
@@ -18,7 +22,29 @@ class VideoFrameSource:
         self.index = -1
         self.pending = b''
         self.last = None
+        self.end_repeats = 0
+        self.video_end = self.probe_end()
         self.lock = threading.Lock()
+
+    def probe_end(self):
+        try:
+            data = json.loads(subprocess.check_output([
+                'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                '-show_entries', 'stream=duration', '-of', 'json', str(self.path)], timeout=30))
+            value = float(data['streams'][0]['duration'])
+            return value if math.isfinite(value) and value > 0 else None
+        except (OSError, subprocess.SubprocessError, KeyError, IndexError, ValueError):
+            return None
+
+    def tail_allowed(self, target):
+        # Only bridge a small, known video/container duration mismatch. Never hide
+        # an early decoder exit or an incomplete PNG as a repeated good frame.
+        tolerance = max(.25, 2 / self.fps)
+        last_time = self.origin + self.index / self.fps
+        return (self.last is not None and self.video_end is not None
+                and self.video_end - tolerance <= last_time <= self.video_end + tolerance
+                and target <= self.video_end + tolerance
+                and self.process.wait(timeout=5) == 0)
 
     def close(self):
         if self.process:
@@ -35,20 +61,22 @@ class VideoFrameSource:
         self.last = None
         self.process = subprocess.Popen(
             ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error',
-             '-ss', f'{target:.8f}', '-i', str(self.path), '-an',
-             '-vf', f'fps={self.fps}', '-f', 'image2pipe', '-vcodec', 'png', '-pix_fmt', 'rgb24', 'pipe:1'],
+             '-xerror', '-ss', f'{target:.8f}', '-i', str(self.path), '-an',
+             '-vf', f'fps={self.fps}:eof_action=pass', '-f', 'image2pipe', '-vcodec', 'png', '-compression_level', '1', '-pix_fmt', 'rgb24', 'pipe:1'],
             stdout=subprocess.PIPE, stderr=self.log)
 
-    def read_exact(self, count):
+    def read_exact(self, count, frame_start=False):
         data = bytearray()
         while len(data) < count:
             block = os.read(self.process.stdout.fileno(), count - len(data))
-            if not block: raise ValueError('FFmpeg ended before a complete source frame was decoded')
+            if not block:
+                if frame_start and not data: raise CleanVideoEnd()
+                raise ValueError('FFmpeg returned an incomplete source frame')
             data.extend(block)
         return bytes(data)
 
     def next_png(self):
-        signature = self.read_exact(8)
+        signature = self.read_exact(8, frame_start=True)
         if signature != b'\x89PNG\r\n\x1a\n':
             raise ValueError('Invalid PNG source frame from FFmpeg')
         parts = [signature]
@@ -64,8 +92,14 @@ class VideoFrameSource:
 
     def frame(self, target):
         with self.lock:
-            if not self.process or target < self.origin - .25 / self.fps or target - self.origin > 20:
-                self.restart(target)
+            current = self.origin + max(0, self.index) / self.fps
+            if not self.process or target < self.origin - .25 / self.fps or target - current > 20:
+                # Start just before a requested tail frame so a valid final frame
+                # is available even when the first request is at the source end.
+                origin = target
+                if self.video_end is not None and target >= self.video_end - .5:
+                    origin = max(0, min(target, self.video_end - .5))
+                self.restart(origin)
             wanted = round((target - self.origin) * self.fps)
             if wanted < self.index:
                 self.restart(target)
@@ -82,7 +116,13 @@ class VideoFrameSource:
             timer.start()
             try:
                 while self.index < wanted:
-                    self.last = self.next_png()
+                    try:
+                        self.last = self.next_png()
+                    except CleanVideoEnd:
+                        if expired.is_set() or not self.tail_allowed(target):
+                            raise ValueError('Unexpected end of source video; no valid frame at this time')
+                        self.end_repeats += 1
+                        return self.last
                     self.index += 1
                 return self.last
             except (OSError, ValueError) as error:

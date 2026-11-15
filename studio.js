@@ -195,7 +195,7 @@ function frame(now){
  if(playing){time=Math.min(renderEnd??total(),(now-anchor)/1000);syncMedia();if(time>=(renderEnd??total())){stop();if(record?.state==='recording')record.stop()}}
  if(previewEnd!==null && (!playing||time>=previewEnd)){endTransitionPreview()}
  if(busy)updateProgress();
- draw();$('clock').textContent=fmt(time)+' / '+fmt(total());$('seek').value=time;
+ if(!(typeof fixedRequest!=='undefined'&&fixedRequest))draw();$('clock').textContent=fmt(time)+' / '+fmt(total());$('seek').value=time;
  for(const bar of document.querySelectorAll('.cursor'))bar.style.left=(total()?100*time/timelineSpan():0)+'%';
  if(meterNode){meterNode.getByteTimeDomainData(bins);let peak=0;for(const b of bins)peak=Math.max(peak,Math.abs(b-128)/128);$('meter').value=peak;$('peak').value=peak?Math.round(20*Math.log10(peak))+' dB':'−∞ dB'}
  requestAnimationFrame(frame);

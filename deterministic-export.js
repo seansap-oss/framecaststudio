@@ -3,6 +3,19 @@
 // Browser-only exports retain the old real-time recorder as a compatibility fallback.
 let fixedSession=null, fixedPaused=false, fixedResume=null, fixedCancel=false, fixedRequest=null;
 
+let exportClock=null,exportClockTimer=null;
+const exportTiming=document.createElement('div');exportTiming.className='actions';
+exportTiming.setAttribute('aria-label','Export timing');$('progress').before(exportTiming);
+function clockText(seconds){if(seconds===null)return 'Estimating…';const n=Math.max(0,Math.ceil(seconds));return String(Math.floor(n/3600)).padStart(2,'0')+':'+String(Math.floor(n/60)%60).padStart(2,'0')+':'+String(n%60).padStart(2,'0')}
+function paintExportClock(){if(!exportClock)return;const s=exportClock.status();exportTiming.textContent='Elapsed: '+clockText(s.elapsed)+' · Estimated remaining: '+(s.paused?'Paused':s.state==='Stopped'?'Stopped':s.state==='Finalizing'?'Finalizing file…':clockText(s.remaining))}
+function startExportClock(){clearInterval(exportClockTimer);exportClock=new FrameCastRenderClock();paintExportClock();exportClockTimer=setInterval(paintExportClock,1000)}
+function endExportClock(ok){exportClock?.end(ok);clearInterval(exportClockTimer);paintExportClock()}
+async function renderDiagnostics(id,reason){
+ let details={error:reason,version:'0.12.3'};
+ if(id)try{const r=await fetch('/api/render/diagnostics/'+id);if(r.ok)details={...details,...await r.json()}}catch{}
+ const link=el('a','Download render error report');link.href=URL.createObjectURL(new Blob([JSON.stringify(details,null,2)],{type:'application/json'}));link.download='FrameCast-render-error.json';$('results').append(link);
+}
+
 function renderAudioSources(){
  return Object.entries(assets).flatMap(([id,media])=>{
   const l=layers[id];
@@ -105,7 +118,7 @@ render=async function(){
  await bridgeReady;
  if(!bridge||!bridgeInfo.ffmpeg||!bridgeInfo.fixedFrames)return realTimeRender();
  if(busy||!total())return;
- stop();fixedCancel=false;fixedPaused=false;fixedRequest=new AbortController();
+ stop();fixedCancel=false;fixedPaused=false;fixedRequest=new AbortController();startExportClock();
  let id=null,ok=false,reason='';
  try{
   const settings=fixedSettings();if(!settings.codec)throw Error('Select an available FFmpeg codec');
@@ -120,18 +133,19 @@ render=async function(){
    const response=await fetch('/api/render/source/'+id+'/'+source.id,{method:'POST',body:blob,signal:fixedRequest.signal});
    if(!response.ok)throw Error((await response.json()).error||'Media upload failed');
   }
-  const batch=[],began=performance.now();
+  const batch=[];
   for(let i=0;i<started.frames;i++){
    await fixedGate();
    batch.push(await exactFrame(settings.start+i/settings.fps));
    if(batch.length===4||i===started.frames-1){await sendFrames(id,batch);batch.length=0}
    const p=Math.floor((i+1)/started.frames*95);
    $('progress').value=p;
-   const remaining=Math.max(0,Math.round((performance.now()-began)/(i+1)*(started.frames-i-1)/1000));
-   $('jobStatus').value='Rendering fixed frames · '+(i+1)+' / '+started.frames+' · '+p+'% · about '+fmt(remaining)+' remaining';
+   exportClock.update(i+1,started.frames);
+   $('jobStatus').value='Rendering fixed frames · '+(i+1)+' / '+started.frames+' · '+p+'%';
    notify('Rendering '+currentRatio+' · '+p+'%');
   }
   await fixedGate();
+  exportClock.state='Finalizing';paintExportClock();
   $('jobStatus').value='Mixing audio and verifying '+started.frames+' frames…';
   // Encoding and verification can exceed the normal API request timeout.
   const result=await fixedJson('/api/render/finish/'+id,'{}',fixedRequest.signal);
@@ -141,7 +155,9 @@ render=async function(){
  }catch(e){
   reason=fixedCancel?'Render cancelled':'Render failed · '+e.message;
   notify(reason);
+  if(!fixedCancel)await renderDiagnostics(id,reason);
  }finally{
+  endExportClock(ok);
   if(id&&!ok)fetch('/api/render/cancel/'+id,{method:'POST',body:'{}'}).catch(()=>{});
   stop();fixedSession=null;fixedRequest=null;fixedPaused=false;fixedResume?.();fixedResume=null;
   renderStart=0;renderEnd=null;lock(false);finishJob(ok);
@@ -151,7 +167,7 @@ render=async function(){
 const priorPause=$('pauseRender').onclick,priorCancel=$('cancelRender').onclick;
 $('pauseRender').onclick=()=>{
  if(!fixedRequest)return priorPause();
- fixedPaused=!fixedPaused;$('pauseRender').textContent=fixedPaused?'Resume render':'Pause render';
+ fixedPaused=!fixedPaused;exportClock?.pause(fixedPaused);paintExportClock();$('pauseRender').textContent=fixedPaused?'Resume render':'Pause render';
  if(!fixedPaused){fixedResume?.();fixedResume=null}
  $('jobStatus').value=fixedPaused?'Paused between frames':'Rendering fixed frames';
 };

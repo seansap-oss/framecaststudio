@@ -83,3 +83,14 @@ Upload an image as a timeline layer. The selected Image animation section includ
 ## v0.12.2 fast export preview
 
 Export & share now has a Fast export checkbox. For one full-frame video with static text/image layers and simple source audio, the local bridge composites a single transparent graphic overlay with FFmpeg and attempts AMD AMF H.264 encoding when the installed FFmpeg lists it. If AMF fails, it retries on the CPU. Animated tickers, chroma key, image motion, transitions, multiple video tracks, audio effects and timed graphics use the existing renderer. The checked box is not a guarantee that a project qualifies. This preview has a generated 1-second video/audio/overlay test but has not been benchmarked on the user's laptop. Compare a short export visually before using it for publication.
+
+
+## v0.12.3 render repair
+
+For one full-frame video with titles and horizontal/vertical tickers, leave **Fast local export when compatible** enabled and choose **MP4 / H.264**. The local server runs FFmpeg directly, tries AMD AMF, and automatically uses software encoding if AMF initialization fails. Unsupported compositions retain the full compositor and all their effects.
+
+The export dialog shows **Elapsed** and **Estimated remaining** separately. Native export supports pause/resume and cancellation; completed output has its frame count verified. If an export fails, use **Download render error report** in the results area.
+
+Run locally with `py server.py`, then open `http://localhost:4173` and press Ctrl+F5. A static Vercel deployment alone cannot run the local FFmpeg engine.
+
+See [validation results](docs/v0.12.3-validation.md) for tested behavior and remaining limitations.

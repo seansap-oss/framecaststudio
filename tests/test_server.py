@@ -43,7 +43,7 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('GET', '/api/health')
         self.assertEqual(code, 200)
         self.assertEqual(data['service'], 'framecast-local')
-        self.assertEqual(data['version'], '0.12.2')
+        self.assertEqual(data['version'], '0.12.3')
         self.assertTrue(data['fixedFrames'])
         self.assertIsInstance(data['ffmpeg'], bool)
 
@@ -87,6 +87,29 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('POST', '/api/connect/google', origin=app.ORIGIN)
         self.assertEqual(code, 400)
         self.assertIn('publish-settings.json', data['error'])
+
+    def test_native_export_api_reports_progress_and_produces_download(self):
+        from test_native_render import fixture
+        import time
+        with tempfile.TemporaryDirectory() as folder:
+            session=fixture(Path(folder),duration=3)
+            ident='native-test-session'
+            app.fixed_renders[ident]=session
+            code,data=self.request('POST','/api/render/native-start/'+ident,origin=app.ORIGIN,payload=b'{}')
+            self.assertEqual(code,200,data)
+            deadline=time.monotonic()+30
+            while time.monotonic()<deadline:
+                code,data=self.request('GET','/api/render/native-status/'+ident)
+                self.assertEqual(code,200,data)
+                if data['state'] in ('Complete','Failed'):break
+                time.sleep(.1)
+            self.assertEqual(data['state'],'Complete',data)
+            self.assertEqual(data['frames'],session.total)
+            self.assertGreater(data['bytes'],1000)
+            code,report=self.request('GET','/api/render/diagnostics/'+ident)
+            self.assertEqual(code,200);self.assertIn('ffmpeg',report)
+            self.assertEqual(self.request('POST','/api/render/cancel/'+ident,origin=app.ORIGIN,payload=b'{}')[0],200)
+            self.assertNotIn(ident,app.native_jobs)
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'Install FFmpeg to test rendering')
     def test_fixed_frame_pipeline_preserves_frame_count_and_audio(self):

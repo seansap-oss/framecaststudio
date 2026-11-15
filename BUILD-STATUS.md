@@ -1,3 +1,21 @@
+# v0.12.3 — long-export boundary repair and native ticker export
+
+Implemented:
+- Clean decoder EOF is distinguished from a truncated PNG or a decoding error. Only a verified final picture within 250 ms of the video stream end may be repeated for a small audio/container tail. Midstream failures still stop with an error.
+- Sequential decoding no longer restarts every 20 seconds; low-compression PNG transport reduces CPU work. The live preview stops redrawing over the fixed-frame compositor.
+- One full-frame video with supported static overlays and horizontal/vertical tickers now uses a single native FFmpeg export. Text, fonts, icons and emojis are rasterized once; FFmpeg animates their textures. Eligible H.264 MP4 exports try AMD AMF and fall back to software if initialization fails.
+- Native jobs run independently of long HTTP responses, with status polling, pause/resume and cancel. Output is verified against the expected frame count before a download appears.
+- Elapsed time and estimated remaining time appear separately. Remaining time uses recent throughput, excludes pauses, and labels finalization honestly rather than promising an exact completion time.
+- Error reports include settings, frame progress and FFmpeg log output before temporary resources are cleaned up.
+
+Preserved: the editor, timeline, images, animation controls, audio controls, transitions, other codecs, export ranges, existing publishing integrations and project format. Complex projects continue through the full compositor rather than silently dropping effects.
+
+Limits: native fast export currently requires one full-frame program video, H.264 MP4, unchanged source volume, and no transitions, chroma key, grading, animated images or additional audio mix. These projects retain the full compositor. No promise of Premiere/Resolve parity, universal GPU support, or a fixed five-minute export on every laptop. The user's original failing source is not available here. Windows AMF and Windows pause need device verification.
+
+Validation and benchmark results: see docs/v0.12.3-validation.md. Do not treat this repair as a completed commercial launch audit.
+
+---
+
 # v0.12.2 render transport repair
 
 Added fast-export.js to the Python public-file allowlist (it was incorrectly returning 404). Bodyless command handlers now drain the submitted JSON before reusing HTTP/1.1 connections. TCP_NODELAY avoids per-request delayed-ACK stalls. Video-frame GET requests retry transient connection failures up to three times; render mutations are not automatically retried. Python logs errors with a traceback for diagnosis. The user's exact 124.478-second failure is not reproduced without the original media/terminal logs. AV1 still uses the standard software path; AMD fast export requires H.264 and a compatible static project.

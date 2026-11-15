@@ -1,6 +1,7 @@
 """Single-user local publishing bridge. Python 3.10+ and FFmpeg."""
 import json, os, re, secrets, shutil, subprocess, tempfile, threading, time, webbrowser, socket, traceback
 from offline_render import FixedFrameRender
+from native_render import NativeJob
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlencode, urlparse, parse_qs
@@ -10,13 +11,14 @@ from functools import lru_cache
 
 ROOT = Path(__file__).resolve().parent
 ORIGIN = 'http://localhost:4173'
-PUBLIC = {'index.html','studio.css','studio.js','timeline.js','layers.js','tracks.js','sample.js','publish.js','editing.js','workspace.js','image-editing.js','editor-core.js','editor-workspace.js','editor-workspace.css','ticker-inspector.js','render-ranges.js','frame-seek.js','deterministic-export.js','fast-export.js'}
+PUBLIC = {'index.html','studio.css','studio.js','timeline.js','layers.js','tracks.js','sample.js','publish.js','editing.js','workspace.js','image-editing.js','editor-core.js','editor-workspace.js','editor-workspace.css','ticker-inspector.js','render-ranges.js','frame-seek.js','render-progress.js','deterministic-export.js','fast-export.js'}
 CONFIG = ROOT/'publish-settings.json'
 cfg = json.loads(CONFIG.read_text(encoding='utf-8-sig')) if CONFIG.exists() else {}
 temp = tempfile.TemporaryDirectory()
 renders, states, jobs, tokens = {}, {}, {}, {}
 render_codecs = {}
 fixed_renders = {}
+native_jobs = {}
 graph = 'https://graph.facebook.com/'+cfg.get('meta_version','v25.0')
 lock = threading.Lock()
 
@@ -148,7 +150,7 @@ class Handler(BaseHTTPRequestHandler):
             url=urlparse(self.path);route=url.path; qs=parse_qs(url.query)
             # These commands ignore their JSON payload, but persistent HTTP requires
             # consuming it before accepting the next request on the connection.
-            if post and route.startswith(('/api/render/finish/','/api/render/fast-finish/','/api/render/cancel/','/api/connect/')):
+            if post and route.startswith(('/api/render/finish/','/api/render/fast-finish/','/api/render/native-start/','/api/render/cancel/','/api/connect/')):
                 size=int(self.headers.get('Content-Length','0'))
                 if not 0<=size<=65536:raise ValueError('Invalid command size')
                 self.rfile.read(size)
@@ -158,7 +160,7 @@ class Handler(BaseHTTPRequestHandler):
                 if 'code' not in qs: raise ValueError('Sign-in cancelled or denied. Return to FrameCast and reconnect.')
                 oauth(provider,qs['code'][0]);return self.reply('Account connected. Close this tab and refresh accounts in FrameCast.','text/plain')
             if not post and route=='/api/health':
-                return self.reply(dict(service='framecast-local',version='0.12.2',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
+                return self.reply(dict(service='framecast-local',version='0.12.3',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
             if post and route=='/api/render/start':
                 if not shutil.which('ffmpeg') or not shutil.which('ffprobe'): raise ValueError('Install FFmpeg and FFprobe for fixed-frame export')
                 size=int(self.headers.get('Content-Length','0'))
@@ -179,6 +181,11 @@ class Handler(BaseHTTPRequestHandler):
                 session=fixed_renders[ident]
                 session.source(key,self.rfile,int(self.headers.get('Content-Length','0')))
                 return self.reply(dict(ok=True))
+            if not post and route.startswith('/api/render/diagnostics/'):
+                session=fixed_renders[route.split('/')[-1]]
+                session.log.flush()
+                return self.reply(dict(settings=session.settings,framesReceived=session.count,
+                    totalFrames=session.total,ffmpeg=(session.root/'ffmpeg.log').read_text(errors='replace')[-16000:]))
             if not post and route.startswith('/api/render/video/'):
                 parts=route.split('/')
                 if len(parts)!=6:raise ValueError('Invalid video frame route')
@@ -190,6 +197,35 @@ class Handler(BaseHTTPRequestHandler):
                 ident=route.split('/')[-1]
                 count=fixed_renders[ident].frames(self.rfile,int(self.headers.get('Content-Length','0')))
                 return self.reply(dict(received=count))
+            if post and route.startswith('/api/render/native-asset/'):
+                _,_,_,_,ident,name=route.split('/')
+                if not re.fullmatch(r'(graphic|background)-[0-9]{1,3}',name):raise ValueError('Invalid graphic asset')
+                session=fixed_renders[ident]
+                if ident in native_jobs:raise ValueError('Export already started')
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<32*1024**2:raise ValueError('Invalid graphic size')
+                data=self.rfile.read(size)
+                if not data.startswith(b'\x89PNG\r\n\x1a\n'):raise ValueError('Invalid PNG graphic')
+                (session.root/(name+'.png')).write_bytes(data)
+                return self.reply(dict(ok=True))
+            if post and route.startswith('/api/render/native-start/'):
+                ident=route.split('/')[-1]
+                if ident in native_jobs:raise ValueError('Export already started')
+                native_jobs[ident]=NativeJob(fixed_renders[ident],Path(temp.name)/(ident+'.mp4'))
+                return self.reply(dict(started=True))
+            if not post and route.startswith('/api/render/native-status/'):
+                ident=route.split('/')[-1];job=native_jobs[ident];data=job.snapshot()
+                if data['state']=='Complete':
+                    renders[ident]=job.output;render_codecs[ident]='h264'
+                    data.update(id=ident,bytes=job.output.stat().st_size)
+                return self.reply(data)
+            if post and route.startswith('/api/render/native-pause/'):
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<128:raise ValueError('Invalid pause request')
+                paused=json.loads(self.rfile.read(size)).get('paused')
+                if not isinstance(paused,bool):raise ValueError('Invalid pause state')
+                native_jobs[route.split('/')[-1]].pause(paused)
+                return self.reply(dict(paused=paused))
             if post and route.startswith('/api/render/fast-overlay/'):
                 ident=route.split('/')[-1];session=fixed_renders[ident]
                 size=int(self.headers.get('Content-Length','0'))
@@ -238,6 +274,7 @@ class Handler(BaseHTTPRequestHandler):
             if post and route.startswith('/api/render/cancel/'):
                 ident=route.split('/')[-1]
                 session=fixed_renders.pop(ident,None)
+                native_jobs.pop(ident,None)
                 if session:session.cancel()
                 return self.reply(dict(cancelled=True))
             if not post and route=='/api/accounts':

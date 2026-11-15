@@ -5,8 +5,8 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 // Explicit allowlist: credentials, local renders and Python never enter a public build.
 const files = ['index.html', 'studio.css', 'editor-workspace.css', 'sample.js',
   'studio.js', 'layers.js', 'timeline.js', 'editing.js', 'workspace.js',
-  'image-editing.js', 'editor-core.js', 'editor-workspace.js', 'tracks.js', 'publish.js', 'ticker-inspector.js', 'render-ranges.js', 'frame-seek.js', 'deterministic-export.js', 'fast-export.js'];
+  'image-editing.js', 'editor-core.js', 'editor-workspace.js', 'tracks.js', 'publish.js', 'ticker-inspector.js', 'render-ranges.js', 'frame-seek.js', 'render-progress.js','deterministic-export.js', 'fast-export.js'];
 await rm(path.join(root, 'dist'), { recursive: true, force: true });
 await mkdir(path.join(root, 'dist'), { recursive: true });
 await Promise.all(files.map(file => copyFile(path.join(root, file), path.join(root, 'dist', file))));
-console.log(`FrameCast Studio v0.12.2: ${files.length} public files built into dist/`);
+console.log(`FrameCast Studio v0.12.3: ${files.length} public files built into dist/`);
