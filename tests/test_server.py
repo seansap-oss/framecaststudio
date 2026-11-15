@@ -43,7 +43,7 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('GET', '/api/health')
         self.assertEqual(code, 200)
         self.assertEqual(data['service'], 'framecast-local')
-        self.assertEqual(data['version'], '0.11.3')
+        self.assertEqual(data['version'], '0.11.4')
         self.assertTrue(data['fixedFrames'])
         self.assertIsInstance(data['ffmpeg'], bool)
 
@@ -142,7 +142,9 @@ class ServiceTests(unittest.TestCase):
                 conn.request('GET',f'/api/render/video/{ident}/visual1?t={at}',headers={'Host':'localhost:4173'})
                 response=conn.getresponse();body=response.read();status=response.status;conn.close()
                 self.assertEqual(status,200,body)
-                self.assertTrue(body.startswith(b'\xff\xd8'))
+                self.assertTrue(body.startswith(b'\x89PNG\r\n\x1a\n'))
+                subprocess.run(['ffmpeg','-v','error','-f','image2pipe','-i','pipe:0',
+                    '-frames:v','1','-f','null','-'],input=body,check=True)
                 return body
             first=frame(0)
             self.assertEqual(frame(0),first)

@@ -1,4 +1,4 @@
-# FrameCast Studio v0.11.3
+# FrameCast Studio v0.11.4
 
 A local-first video graphics editor with a multitrack timeline and local Live/Signage workspaces. Development checkpoint; read [BUILD-STATUS.md](BUILD-STATUS.md) for tested behaviour and remaining work.
 
@@ -6,23 +6,23 @@ A local-first video graphics editor with a multitrack timeline and local Live/Si
 
 ## Windows / your existing VS Code terminal
 
-Stop the old server with **Ctrl+C** in the existing VS Code terminal. Download the v0.11.3 ZIP, then run:
+Stop the old server with **Ctrl+C** in the existing VS Code terminal. Download the v0.11.4 ZIP, then run:
 
 ```powershell
 Set-Location D:\Framecaststudio
-$archive = Get-ChildItem "$env:USERPROFILE\Downloads" -Filter "framecaststudio-workbench-v0.11.3*.zip" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $archive) { throw "Download the GitHub v0.11.3 ZIP first" }
+$archive = Get-ChildItem "$env:USERPROFILE\Downloads" -Filter "framecaststudio-workbench-v0.11.4*.zip" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $archive) { throw "Download the GitHub v0.11.4 ZIP first" }
 $backup = "D:\Framecaststudio-backup-$(Get-Date -Format yyyyMMdd-HHmmss)"
 Copy-Item -LiteralPath D:\Framecaststudio -Destination $backup -Recurse
-$unpack = Join-Path $env:TEMP "FrameCast-v0113-$(Get-Date -Format yyyyMMddHHmmss)"
+$unpack = Join-Path $env:TEMP "FrameCast-v0114-$(Get-Date -Format yyyyMMddHHmmss)"
 Expand-Archive -LiteralPath $archive.FullName -DestinationPath $unpack -Force
 $source = Get-ChildItem -LiteralPath $unpack -Directory | Select-Object -First 1
 Copy-Item -Path (Join-Path $source.FullName '*') -Destination D:\Framecaststudio -Recurse -Force
-Select-String -Path D:\Framecaststudio\index.html -Pattern 'v0.11.3'
+Select-String -Path D:\Framecaststudio\index.html -Pattern 'v0.11.4'
 py server.py
 ```
 
-Open **http://localhost:4173**, press **Ctrl+F5**, and confirm **v0.11.3** in the header. Keep the existing VS Code window. The ZIP leaves local media and `publish-settings.json` untouched. Python 3.10+ and FFmpeg/FFprobe on PATH are required for fixed-frame local export; without them, the old browser real-time export remains as a fallback.
+Open **http://localhost:4173**, press **Ctrl+F5**, and confirm **v0.11.4** in the header. Keep the existing VS Code window. The ZIP leaves local media and `publish-settings.json` untouched. Python 3.10+ and FFmpeg/FFprobe on PATH are required for fixed-frame local export; without them, the old browser real-time export remains as a fallback.
 
 ## Ticker inspector update
 
@@ -46,7 +46,7 @@ Use **Export & share**, choose destinations, framing, format and resolution, the
 
 Connected publishing needs your configured Google/Meta developer apps and eligible accounts. See [PUBLISHING.md](PUBLISHING.md). Keep secrets in local configuration, never public `dist` files or browser JavaScript. Live streaming and rendered-video publishing are separate workflows.
 
-In v0.11.3, the local fixed-frame path uploads video sources to the Python bridge and asks FFmpeg to decode each source frame. This avoids the repeated Chrome video seeking that caused the reported timeout. A large original file is temporarily copied to the local server before rendering; allow disk space and time for that preparation. The browser still composes the graphics and sends output frames to FFmpeg, so this is not yet a fully native desktop renderer.
+In v0.11.4, the local fixed-frame path uploads video sources to the Python bridge and asks FFmpeg to decode each source frame. This avoids the repeated Chrome video seeking that caused the reported timeout. A large original file is temporarily copied to the local server before rendering; allow disk space and time for that preparation. The browser still composes the graphics and sends output frames to FFmpeg, so this is not yet a fully native desktop renderer.
 
 ## Build and verify
 

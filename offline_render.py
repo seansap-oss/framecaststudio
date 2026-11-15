@@ -36,24 +36,31 @@ class VideoFrameSource:
         self.process = subprocess.Popen(
             ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error',
              '-ss', f'{target:.8f}', '-i', str(self.path), '-an',
-             '-vf', f'fps={self.fps}', '-f', 'image2pipe', '-vcodec', 'mjpeg', 'pipe:1'],
+             '-vf', f'fps={self.fps}', '-f', 'image2pipe', '-vcodec', 'png', '-pix_fmt', 'rgb24', 'pipe:1'],
             stdout=subprocess.PIPE, stderr=self.log)
 
-    def next_jpeg(self):
+    def read_exact(self, count):
+        data = bytearray()
+        while len(data) < count:
+            block = os.read(self.process.stdout.fileno(), count - len(data))
+            if not block: raise ValueError('FFmpeg ended before a complete source frame was decoded')
+            data.extend(block)
+        return bytes(data)
+
+    def next_png(self):
+        signature = self.read_exact(8)
+        if signature != b'\x89PNG\r\n\x1a\n':
+            raise ValueError('Invalid PNG source frame from FFmpeg')
+        parts = [signature]
+        size = 8
         while True:
-            begin = self.pending.find(b'\xff\xd8')
-            if begin >= 0:
-                end = self.pending.find(b'\xff\xd9', begin + 2)
-                if end >= 0:
-                    result = self.pending[begin:end + 2]
-                    self.pending = self.pending[end + 2:]
-                    return result
-                if begin: self.pending = self.pending[begin:]
-            elif len(self.pending) > 1:
-                self.pending = self.pending[-1:]
-            block = os.read(self.process.stdout.fileno(), 65536)
-            if not block: raise ValueError('FFmpeg could not decode a source video frame')
-            self.pending += block
+            header = self.read_exact(8)
+            length = struct.unpack('>I', header[:4])[0]
+            size += length + 12
+            if size > 256 * 1024**2:
+                raise ValueError('Decoded source frame is too large')
+            parts.extend((header, self.read_exact(length + 4)))
+            if header[4:] == b'IEND': return b''.join(parts)
 
     def frame(self, target):
         with self.lock:
@@ -64,7 +71,7 @@ class VideoFrameSource:
                 self.restart(target)
                 wanted = 0
             while self.index < wanted:
-                self.last = self.next_jpeg()
+                self.last = self.next_png()
                 self.index += 1
             return self.last
 
