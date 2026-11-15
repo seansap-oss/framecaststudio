@@ -8,7 +8,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from offline_render import output_frames
+from offline_render import output_frames, verify_video
 
 
 def number(value, low, high):
@@ -72,7 +72,7 @@ class NativeJob:
 
     def snapshot(self):
         return dict(state=self.state,frames=self.frame,total=self.session.total,encoder=self.encoder,
-                    error=self.error,elapsed=time.monotonic()-self.started,paused=self.paused)
+                    stage=self.session.stage,finalSeconds=self.session.final_seconds,error=self.error,elapsed=time.monotonic()-self.started,paused=self.paused)
 
     def pause(self,value):
         p=self.process
@@ -120,9 +120,7 @@ class NativeJob:
             if rc:raise ValueError('Native encoder failed. Download the error report for FFmpeg details.')
             self.state='Finalizing'
             self.session.mux(self.output)
-            data=json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0','-count_frames','-show_entries','stream=nb_read_frames','-of','json',str(self.output)]))
-            actual=int(data['streams'][0]['nb_read_frames'])
-            if actual!=self.session.total:raise ValueError(f'Output verification failed: expected {self.session.total} frames, got {actual}')
+            actual=verify_video(self.output,self.session.total)
             self.frame=actual;self.state='Complete'
         except Exception as error:
             self.error=str(error);self.state='Failed'

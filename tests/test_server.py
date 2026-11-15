@@ -43,7 +43,7 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('GET', '/api/health')
         self.assertEqual(code, 200)
         self.assertEqual(data['service'], 'framecast-local')
-        self.assertEqual(data['version'], '0.12.5')
+        self.assertEqual(data['version'], '0.12.6')
         self.assertTrue(data['fixedFrames'])
         self.assertIsInstance(data['ffmpeg'], bool)
 

@@ -91,7 +91,7 @@ render=async function(){
    if(result.state==='Rendering'&&!fixedPaused)exportClock.update(result.frames,result.total);
    if(result.state==='Finalizing')exportClock.state='Finalizing';
    const percent=Math.min(99,Math.floor(result.frames/result.total*95));$('progress').value=percent;
-   $('jobStatus').value=(fixedPaused?'Paused':'Native '+result.state.toLowerCase())+' · '+percent+'% · '+(result.encoder||'preparing');
+   $('jobStatus').value=(fixedPaused?'Paused':result.state==='Finalizing'?(result.stage||'Finalizing')+' · '+Math.floor(result.finalSeconds||0)+'s processed':'Native '+result.state.toLowerCase())+' · '+percent+'% · '+(result.encoder||'preparing');
    await new Promise(resolve=>setTimeout(resolve,500));
   }
   fixedResult(result,settings);ok=true;$('jobStatus').value='Verified '+result.frames+' frames · '+result.encoder+' · download ready';notify('Native ticker export finished');

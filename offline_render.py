@@ -6,12 +6,28 @@ import shutil
 import struct
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 
 def output_frames(settings):
     """One output frame for each timeline timestamp strictly before the range end."""
     return math.ceil((settings['end'] - settings['start']) * settings['fps'] - 1e-8)
+
+
+def verify_video(path, expected):
+    # MP4 sample tables contain the frame count; avoid decoding the entire video twice.
+    data = json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0',
+        '-show_entries','stream=nb_frames','-of','json',str(path)], timeout=30))
+    value = data.get('streams',[{}])[0].get('nb_frames')
+    if value in (None, 'N/A'):
+        data = json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0',
+            '-count_packets','-show_entries','stream=nb_read_packets','-of','json',str(path)], timeout=120))
+        value = data['streams'][0]['nb_read_packets']
+    actual = int(value)
+    if actual != expected:
+        raise ValueError(f'Output verification failed: expected {expected} frames, got {actual}')
+    return actual
 
 
 class CleanVideoEnd(EOFError):
@@ -164,6 +180,8 @@ class FixedFrameRender:
         self.mux_process = None
         self.lock = threading.Lock()
         self.cancelled = False
+        self.stage = "Preparing"
+        self.final_seconds = 0
         # MP4 preserves the encoder time base; millisecond-rounded MKV timestamps
         # can introduce uneven 60fps timestamps when video is copied into MP4.
         self.silent = self.root / 'silent.mp4'
@@ -235,12 +253,7 @@ class FixedFrameRender:
         self.log.flush()
         self.mux(output)
         if self.cancelled: raise ValueError('Render cancelled')
-        probe = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
-            '-count_frames', '-show_entries', 'stream=nb_read_frames', '-of', 'json', str(output)]))
-        actual = int(probe['streams'][0]['nb_read_frames'])
-        if actual != self.total:
-            output.unlink(missing_ok=True)
-            raise ValueError(f'Frame verification failed: expected {self.total}, found {actual}')
+        verify_video(output, self.total)
         return output.stat().st_size
 
     def mux(self, output):
@@ -253,11 +266,13 @@ class FixedFrameRender:
             if not path or entry.get('mute') or not entry.get('volume'): continue
             try:
                 streams = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'a',
-                    '-show_entries', 'stream=index', '-of', 'json', str(path)]))['streams']
+                    '-show_entries', 'stream=index', '-of', 'json', str(path)], timeout=30))['streams']
             except (subprocess.CalledProcessError, ValueError): streams = []
             if streams: active.append((entry, path))
         cmd = ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-i', str(self.silent)]
-        for _, path in active: cmd += ['-i', str(path)]
+        for entry, path in active:
+            limit = max(0., float(entry.get('sourceIn',0)) + min(float(entry['end']),float(s['end'])) - float(entry['start']))
+            cmd += ['-t', str(limit), '-i', str(path)]
         filters = []
         inputs = []
         for i, (entry, _) in enumerate(active, 1):
@@ -298,11 +313,29 @@ class FixedFrameRender:
         cmd += ['-c:v', 'copy', '-c:a', 'libopus' if s['format'] == 'webm' else 'aac',
                 '-ar', '48000', '-b:a', '192k']
         if s['format'] != 'webm': cmd += ['-movflags', '+faststart']
-        cmd += [str(output)]
+        progress = self.root / 'finalize-progress.txt'
+        cmd += ['-progress',str(progress),'-nostats',str(output)]
+        self.stage = 'Mixing audio / writing MP4'
         with self.lock:
             if self.cancelled: raise ValueError('Render cancelled')
             self.mux_process = subprocess.Popen(cmd, stderr=self.log)
-        if self.mux_process.wait(): raise ValueError('Audio mix failed; check FFmpeg log')
+        changed = time.monotonic(); previous = None
+        while self.mux_process.poll() is None:
+            if self.cancelled: raise ValueError('Render cancelled')
+            payload = progress.read_text(errors='replace') if progress.exists() else ''
+            size = output.stat().st_size if output.exists() else 0
+            marker = (payload, size)
+            if marker != previous: changed = time.monotonic(); previous = marker
+            for line in payload.splitlines():
+                if line.startswith('out_time_us='):
+                    try: self.final_seconds = int(line.split('=')[1]) / 1e6
+                    except ValueError: pass
+            if time.monotonic() - changed > 120:
+                self.mux_process.kill(); self.mux_process.wait()
+                raise ValueError('Audio/file finalization made no progress for 120 seconds. Download the render error report.')
+            time.sleep(.2)
+        if self.mux_process.returncode: raise ValueError('Audio mix failed; check FFmpeg log')
+        self.stage = 'Checking output frame count' 
 
     def cancel(self):
         with self.lock:

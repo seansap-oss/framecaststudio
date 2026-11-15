@@ -1,3 +1,11 @@
+# v0.12.6 — bounded finalization and faster structural verification
+
+Validation: 25 JavaScript tests, 22 existing Python tests and two new finalization tests passed. Build passed. No new long-video or Windows benchmark was performed.
+
+Finalization now checks MP4 sample-table frame count, falling back to a bounded packet scan for containers without that metadata. It no longer decodes every output picture a second time in the normal export path. This is structural validation, not a full corruption scan; regression tests still fully decode generated outputs and check exact timestamps.
+
+Audio inputs are limited to the required source end. Finalization exposes audio/file writing progress and stops with an actionable error after 120 seconds without output/progress changes. Metadata probes have 30-second limits and packet scans 120 seconds. Original Windows media and AMD driver remain unavailable; the exact source of the user's 14-minute wait is not proven. No promised laptop completion time.
+
 # v0.12.5 — fractional-duration export repair
 
 Reproduced the v0.12.4 failure: a 10.020-second export at 60 fps requested 602 frames but produced 601. The native encoder used both a rounded-up frame count and a shorter time cutoff. The repair uses one integer frame plan for filtering and encoding; audio is trimmed/padded to that frame plan without cutting the copied video stream.
