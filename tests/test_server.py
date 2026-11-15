@@ -43,7 +43,7 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('GET', '/api/health')
         self.assertEqual(code, 200)
         self.assertEqual(data['service'], 'framecast-local')
-        self.assertEqual(data['version'], '0.12.1')
+        self.assertEqual(data['version'], '0.12.2')
         self.assertTrue(data['fixedFrames'])
         self.assertIsInstance(data['ffmpeg'], bool)
 
@@ -59,6 +59,15 @@ class ServiceTests(unittest.TestCase):
             if original is None: original = conn.sock
             self.assertIs(conn.sock,original)
         conn.close()
+
+    def test_fast_script_is_served_and_cancel_body_is_consumed(self):
+        conn=http.client.HTTPConnection('127.0.0.1',self.httpd.server_port,timeout=5)
+        headers={'Host':'localhost:4173','Origin':app.ORIGIN}
+        conn.request('POST','/api/render/cancel/not-present',body=b'{}',headers=headers)
+        response=conn.getresponse();self.assertEqual(response.status,200);response.read()
+        conn.request('GET','/fast-export.js',headers={'Host':'localhost:4173'})
+        response=conn.getresponse();self.assertEqual(response.status,200)
+        self.assertIn(b'fastCandidate',response.read());conn.close()
 
     def test_invalid_codec_format_is_rejected(self):
         with self.assertRaises(ValueError):

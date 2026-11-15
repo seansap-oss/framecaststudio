@@ -80,6 +80,6 @@ The local FFmpeg path requests each output frame at a fixed timeline timestamp, 
 
 Upload an image as a timeline layer. The selected Image animation section includes masks, motion, cycle duration, direction, repeat, entrance/exit and layer duration or Until video ends. Animated GIF frames use Chrome ImageDecoder and timeline timestamps. Other browsers show a clear unsupported message on GIF import. Export ranges now use an actual select element. Fixed-frame export seeks only active video sources and reports the time if a current source fails to seek. Encoding speed offers Fast, Balanced and Quality; Fast changes only the encoding preset and cannot eliminate slow browser decoding of each frame. See BUILD-STATUS.md for verification limits.
 
-## v0.12.1 fast export preview
+## v0.12.2 fast export preview
 
 Export & share now has a Fast export checkbox. For one full-frame video with static text/image layers and simple source audio, the local bridge composites a single transparent graphic overlay with FFmpeg and attempts AMD AMF H.264 encoding when the installed FFmpeg lists it. If AMF fails, it retries on the CPU. Animated tickers, chroma key, image motion, transitions, multiple video tracks, audio effects and timed graphics use the existing renderer. The checked box is not a guarantee that a project qualifies. This preview has a generated 1-second video/audio/overlay test but has not been benchmarked on the user's laptop. Compare a short export visually before using it for publication.

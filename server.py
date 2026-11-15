@@ -1,5 +1,5 @@
 """Single-user local publishing bridge. Python 3.10+ and FFmpeg."""
-import json, os, re, secrets, shutil, subprocess, tempfile, threading, time, webbrowser
+import json, os, re, secrets, shutil, subprocess, tempfile, threading, time, webbrowser, socket, traceback
 from offline_render import FixedFrameRender
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -10,7 +10,7 @@ from functools import lru_cache
 
 ROOT = Path(__file__).resolve().parent
 ORIGIN = 'http://localhost:4173'
-PUBLIC = {'index.html','studio.css','studio.js','timeline.js','layers.js','tracks.js','sample.js','publish.js','editing.js','workspace.js','image-editing.js','editor-core.js','editor-workspace.js','editor-workspace.css','ticker-inspector.js','render-ranges.js','frame-seek.js','deterministic-export.js'}
+PUBLIC = {'index.html','studio.css','studio.js','timeline.js','layers.js','tracks.js','sample.js','publish.js','editing.js','workspace.js','image-editing.js','editor-core.js','editor-workspace.js','editor-workspace.css','ticker-inspector.js','render-ranges.js','frame-seek.js','deterministic-export.js','fast-export.js'}
 CONFIG = ROOT/'publish-settings.json'
 cfg = json.loads(CONFIG.read_text(encoding='utf-8-sig')) if CONFIG.exists() else {}
 temp = tempfile.TemporaryDirectory()
@@ -131,6 +131,10 @@ def upload(job, asset, platform, meta):
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    def setup(self):
+        super().setup()
+        self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
     def log_message(self,*args): pass
     def reply(self,data,typ='application/json',code=200):
         if typ=='application/json': data=json.dumps(data).encode()
@@ -142,13 +146,19 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.headers.get('Host')!='localhost:4173' or (post and self.headers.get('Origin')!=ORIGIN): return self.reply({'error':'Invalid origin'},code=403)
             url=urlparse(self.path);route=url.path; qs=parse_qs(url.query)
+            # These commands ignore their JSON payload, but persistent HTTP requires
+            # consuming it before accepting the next request on the connection.
+            if post and route.startswith(('/api/render/finish/','/api/render/fast-finish/','/api/render/cancel/','/api/connect/')):
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<=size<=65536:raise ValueError('Invalid command size')
+                self.rfile.read(size)
             if not post and route.startswith('/callback/'):
                 provider=route.split('/')[-1]; state=states.pop(qs.get('state',[''])[0],None)
                 if not state or state[0]!=provider or state[1]<time.time(): raise ValueError('Sign-in expired')
                 if 'code' not in qs: raise ValueError('Sign-in cancelled or denied. Return to FrameCast and reconnect.')
                 oauth(provider,qs['code'][0]);return self.reply('Account connected. Close this tab and refresh accounts in FrameCast.','text/plain')
             if not post and route=='/api/health':
-                return self.reply(dict(service='framecast-local',version='0.12.1',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
+                return self.reply(dict(service='framecast-local',version='0.12.2',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
             if post and route=='/api/render/start':
                 if not shutil.which('ffmpeg') or not shutil.which('ffprobe'): raise ValueError('Install FFmpeg and FFprobe for fixed-frame export')
                 size=int(self.headers.get('Content-Length','0'))
@@ -287,7 +297,11 @@ class Handler(BaseHTTPRequestHandler):
             name=route.lstrip('/') or 'index.html'
             if not post and name in PUBLIC:return self.reply((ROOT/name).read_bytes(),{'html':'text/html','js':'text/javascript','css':'text/css'}[name.split('.')[-1]]+'; charset=utf-8')
             return self.reply({},code=404)
-        except Exception as e:return self.reply({'error':str(e)},code=400)
+        except Exception as e:
+            print('FrameCast request failed:', self.path, str(e), flush=True)
+            traceback.print_exc()
+            try:return self.reply({'error':str(e)},code=400)
+            except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError):return
 
 if __name__=='__main__':
     if not shutil.which('ffmpeg'):print('FFmpeg not found: editing is available; install FFmpeg for MP4 / MOV conversion.',flush=True)

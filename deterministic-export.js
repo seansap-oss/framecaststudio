@@ -27,6 +27,18 @@ function fixedSettings(){
   hum:parseInt($('hum').value)||0,noise:(parseInt($('noise').value)||0)*1000,
   compress:$('compress').checked,threshold:+$('threshold').value,ratio:+$('compRatio').value};
 }
+async function fetchFrameWithRetry(url,options){
+ let last;
+ for(let attempt=0;attempt<3;attempt++){
+  try{return await fetch(url,options)}catch(error){
+   if(options.signal.aborted)throw error;
+   last=error;
+   $('jobStatus').value='Reconnecting to local renderer · attempt '+(attempt+1)+' / 3';
+   await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
+  }
+ }
+ throw last;
+}
 async function exactFrame(at){
  time=at;
  const videos=FrameCastFrameSeek.active(clips,assets,layers,at);
@@ -37,7 +49,7 @@ async function exactFrame(at){
   const source=sources.find(item=>item.media===media);
   if(!source)throw Error('Video source missing from local renderer');
   const safeTime=Math.max(0,Math.min(sourceTime,media.duration-1/(+$('exportFps').value)));
-  const response=await fetch('/api/render/video/'+fixedSession+'/'+encodeURIComponent(source.id)+'?t='+encodeURIComponent(safeTime),{signal:fixedRequest.signal}).catch(error=>{if(fixedCancel)throw error;throw Error('Local video connection failed for '+(layers[source.id]?.name||source.id)+' at '+safeTime.toFixed(3)+'s. Check the Python terminal; save its error message. '+error.message)});
+  const response=await fetchFrameWithRetry('/api/render/video/'+fixedSession+'/'+encodeURIComponent(source.id)+'?t='+encodeURIComponent(safeTime),{signal:fixedRequest.signal}).catch(error=>{if(fixedCancel)throw error;throw Error('Local video connection failed for '+(layers[source.id]?.name||source.id)+' at '+safeTime.toFixed(3)+'s. Check the Python terminal; save its error message. '+error.message)});
   if(!response.ok){const error=await response.json();throw Error(error.error||'Source frame decode failed')}
   const url=URL.createObjectURL(await response.blob());
   try{

@@ -1,3 +1,7 @@
+# v0.12.2 render transport repair
+
+Added fast-export.js to the Python public-file allowlist (it was incorrectly returning 404). Bodyless command handlers now drain the submitted JSON before reusing HTTP/1.1 connections. TCP_NODELAY avoids per-request delayed-ACK stalls. Video-frame GET requests retry transient connection failures up to three times; render mutations are not automatically retried. Python logs errors with a traceback for diagnosis. The user's exact 124.478-second failure is not reproduced without the original media/terminal logs. AV1 still uses the standard software path; AMD fast export requires H.264 and a compatible static project.
+
 # v0.12.1 image uploader visibility
 
 The Inspector always shows Add image / logo and animate directly under the layer selector. Upload creates a new image layer or replaces a selected image/Logo layer. Motion settings remain disabled until an eligible image is selected. The separate older generic graphic motion section is labelled accordingly.
