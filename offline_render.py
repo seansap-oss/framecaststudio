@@ -1,0 +1,172 @@
+"""Fixed-frame local renderer. Frames arrive in timeline order; FFmpeg never watches the UI clock."""
+import json
+import math
+import shutil
+import struct
+import subprocess
+import threading
+from pathlib import Path
+
+
+def video_options(fmt, preset, codec, encoder):
+    quality = {'h264': (29, 23, 18), 'hevc': (30, 25, 20), 'av1': (38, 30, 24), 'vp9': (38, 32, 26)}[codec][('Small', 'Balanced', 'High').index(preset)]
+    args = ['-c:v', encoder, '-crf', str(quality), '-pix_fmt', 'yuv420p', '-threads', '2']
+    if codec == 'h264': args += ['-preset', 'medium']
+    elif codec == 'hevc': args += ['-preset', 'medium', '-x265-params', 'pools=2:frame-threads=2:log-level=error', '-tag:v', 'hvc1']
+    elif encoder == 'libsvtav1': args += ['-preset', '8', '-svtav1-params', 'lp=2']
+    elif codec == 'av1': args += ['-b:v', '0', '-cpu-used', '6']
+    else: args += ['-b:v', '0', '-deadline', 'good', '-cpu-used', '4']
+    return args
+
+
+class FixedFrameRender:
+    def __init__(self, root, settings, encoder):
+        self.root = Path(root)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.settings = settings
+        self.encoder = encoder
+        self.total = math.ceil((settings['end'] - settings['start']) * settings['fps'] - 1e-8)
+        self.count = 0
+        self.sources = {}
+        self.process = None
+        self.mux_process = None
+        self.lock = threading.Lock()
+        self.cancelled = False
+        self.silent = self.root / 'silent.mkv'
+        self.log = (self.root / 'ffmpeg.log').open('wb')
+
+    def source(self, key, stream, size):
+        if self.process or key not in {entry['id'] for entry in self.settings['audio']}:
+            raise ValueError('Unknown or late media source')
+        if key in self.sources: raise ValueError('Media source already uploaded')
+        if not 0 < size <= 30 * 1024**3: raise ValueError('Invalid media size')
+        path = self.root / ('source-' + key)
+        with path.open('wb') as target:
+            while size:
+                block = stream.read(min(size, 1024**2))
+                if not block: raise ValueError('Incomplete media upload')
+                target.write(block)
+                size -= len(block)
+        self.sources[key] = path
+
+    def start_encoder(self):
+        s = self.settings
+        cmd = ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
+               '-f', 'image2pipe', '-framerate', str(s['fps']), '-vcodec', 'png', '-i', 'pipe:0',
+               '-an', *video_options(s['format'], s['quality'], s['codec'], self.encoder), str(self.silent)]
+        self.process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=self.log)
+
+    def frames(self, stream, size):
+        if not 0 < size <= 64 * 1024**2: raise ValueError('Invalid frame batch')
+        with self.lock:
+            if self.cancelled: raise ValueError('Render cancelled')
+            if not self.process: self.start_encoder()
+            remaining = size
+            while remaining:
+                header = stream.read(4)
+                if len(header) != 4: raise ValueError('Incomplete frame batch')
+                length = struct.unpack('>I', header)[0]
+                remaining -= 4
+                if not 8 < length <= remaining or self.count >= self.total:
+                    raise ValueError('Unexpected frame payload or frame count')
+                payload = stream.read(length)
+                if len(payload) != length or not payload.startswith(b'\x89PNG\r\n\x1a\n'):
+                    raise ValueError('Invalid PNG frame')
+                remaining -= length
+                try:
+                    self.process.stdin.write(payload)
+                except BrokenPipeError:
+                    raise ValueError('Video encoder stopped; check local FFmpeg') from None
+                self.count += 1
+            return self.count
+
+    def finish(self, output):
+        with self.lock:
+            if self.cancelled: raise ValueError('Render cancelled')
+            if self.count != self.total: raise ValueError(f'Expected {self.total} frames, received {self.count}')
+            self.process.stdin.close()
+        if self.process.wait(timeout=3600): raise ValueError('Video encoder failed; check FFmpeg log')
+        if self.cancelled: raise ValueError('Render cancelled')
+        self.log.flush()
+        self.mux(output)
+        if self.cancelled: raise ValueError('Render cancelled')
+        probe = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+            '-count_frames', '-show_entries', 'stream=nb_read_frames', '-of', 'json', str(output)]))
+        actual = int(probe['streams'][0]['nb_read_frames'])
+        if actual != self.total:
+            output.unlink(missing_ok=True)
+            raise ValueError(f'Frame verification failed: expected {self.total}, found {actual}')
+        return output.stat().st_size
+
+    def mux(self, output):
+        s = self.settings
+        duration = self.total / s['fps']
+        # Audio is decoded from the originals, aligned to the same timeline and mixed only once.
+        active = []
+        for entry in s['audio']:
+            path = self.sources.get(entry['id'])
+            if not path or entry.get('mute') or not entry.get('volume'): continue
+            try:
+                streams = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'a',
+                    '-show_entries', 'stream=index', '-of', 'json', str(path)]))['streams']
+            except (subprocess.CalledProcessError, ValueError): streams = []
+            if streams: active.append((entry, path))
+        cmd = ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-i', str(self.silent)]
+        for _, path in active: cmd += ['-i', str(path)]
+        filters = []
+        inputs = []
+        for i, (entry, _) in enumerate(active, 1):
+            first = max(float(entry['start']), float(s['start']))
+            last = min(float(entry['end']), float(s['end']))
+            if last <= first: continue
+            source_in = max(0., float(entry.get('sourceIn', 0)) + first - float(entry['start']))
+            offset = max(0., first - float(s['start']))
+            level = max(0., min(2., float(entry['volume']) / 100))
+            if entry.get('bus') == 'bed': level *= s['bed'] / 100
+            else: level *= s['clip'] / 100
+            filt = f'[{i}:a]atrim=start={source_in:.6f}:duration={last-first:.6f},asetpts=PTS-STARTPTS,aresample=48000,volume={level:.6f}'
+            if offset: filt += f',adelay={round(offset*1000)}:all=1'
+            filt += f'[a{i}]'
+            filters.append(filt)
+            inputs.append(f'[a{i}]')
+        if inputs:
+            filters.append(''.join(inputs)+f'amix=inputs={len(inputs)}:normalize=0:dropout_transition=0,atrim=duration={duration:.6f}[program]')
+            last = '[program]'
+            effects = []
+            for kind, freq in [('bass', 160), ('equalizer', 1000), ('treble', 5000)]:
+                db = float(s.get(kind, 0))
+                if db:
+                    effects.append(f'{kind}=g={db}:f={freq}' if kind != 'equalizer' else f'equalizer=f={freq}:t=o:w=1:g={db}')
+            hum = int(s.get('hum', 0))
+            if hum:
+                effects += [f'equalizer=f={hum*i}:t=q:w=18:g=-24' for i in (1, 2, 3)]
+            noise = int(s.get('noise', 0))
+            if noise: effects.append(f'lowpass=f={noise}')
+            if s.get('compress'):
+                threshold = 10 ** (float(s.get('threshold', -20)) / 20)
+                effects.append(f'acompressor=threshold={threshold:.6f}:ratio={float(s.get("ratio", 3)):.2f}')
+            effects.append(f'volume={s["master"]/100:.6f}')
+            filters.append(last+','.join(effects)+f',apad,atrim=duration={duration:.6f}[out]')
+            cmd += ['-filter_complex', ';'.join(filters), '-map', '0:v:0', '-map', '[out]']
+        else:
+            cmd += ['-f', 'lavfi', '-t', str(duration), '-i', 'anullsrc=r=48000:cl=stereo', '-map', '0:v:0', '-map', '1:a:0']
+        cmd += ['-c:v', 'copy', '-c:a', 'libopus' if s['format'] == 'webm' else 'aac',
+                '-ar', '48000', '-b:a', '192k', '-t', str(duration)]
+        if s['format'] != 'webm': cmd += ['-movflags', '+faststart']
+        cmd += [str(output)]
+        with self.lock:
+            if self.cancelled: raise ValueError('Render cancelled')
+            self.mux_process = subprocess.Popen(cmd, stderr=self.log)
+        if self.mux_process.wait(): raise ValueError('Audio mix failed; check FFmpeg log')
+
+    def cancel(self):
+        with self.lock:
+            self.cancelled = True
+            if self.process and self.process.poll() is None:
+                self.process.kill()
+                self.process.wait()
+            if self.mux_process and self.mux_process.poll() is None:
+                self.mux_process.kill()
+                self.mux_process.wait()
+            self.log.close()
+            shutil.rmtree(self.root, ignore_errors=True)

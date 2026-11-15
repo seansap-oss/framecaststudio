@@ -1,4 +1,12 @@
-# FrameCast Studio v0.10.4 — working development checkpoint
+# FrameCast Studio v0.11.0 — working development checkpoint
+
+## Fixed-frame local export (v0.11.0)
+
+The local Python/FFmpeg server now accepts lossless PNG frames at explicit timeline timestamps. It encodes exactly the requested 30/60 fps frame count, mixes the uploaded original source audio on the same time range, then verifies the encoded count with FFprobe. Export ranges, resolution, format/codec, progress, pause between frames and cancel are retained. The previous browser-only real-time recorder remains as a fallback when the local server or FFmpeg is unavailable. The desktop/local workflow no longer relies on real-time canvas capture for final output.
+
+**Verified:** 13 Node tests and 8 Python tests passed, including generated video/audio fixed-frame export and an HTTP API render session. Syntax and static build passed. A short generated FFmpeg export had the correct video frame count and audio stream.
+
+**Not verified:** interactive editor end-to-end export (Chromium could not launch in this workspace); visual/source frame accuracy on real input; one-hour 1080p, 2K or 4K export; per-clip audio automation points and transitions in the server-side audio mix; colour/HDR fidelity and speed on the target Windows/Mac hardware. These require testing before jitter-free or commercial-quality claims. Video-frame seeking for every output frame is deliberately slow, especially at 4K. No proxy/cache or native decoder has been added.
 
 This release updates the existing editor. It is not a completed commercial SaaS or an OBS replacement. No existing editing, Live or Signage module has been removed. The original v0.9.2 assessment is retained in `docs/BUILD-STATUS-v092.md`.
 
@@ -53,7 +61,7 @@ A Vercel static build serves the editor only. It does not run the persistent loc
 
 - Hosted login, secure multi-user projects/storage/sync, billing and administration.
 - Production publishing service, provider configuration/review and real upload validation.
-- Proxy media, referenced projects, streamed encoding and long-video/4K endurance tests. Browser rendering is currently real time and buffers output; project JSON embeds media. No artificial clip-count limit is imposed, but hardware capacity is finite.
+- Proxy media, referenced projects and long-video/4K endurance tests. The local FFmpeg renderer now streams fixed frames; browser-only export still records in real time. Project JSON embeds media. No artificial clip-count limit is imposed, but hardware capacity is finite.
 - Remote guests, invitations/backstage, producer roles, private communication and ISO recording.
 - RTMP/multistream, destination health/reconnection, dual-orientation broadcasts, platform comments/moderation and prerecorded cloud broadcasts.
 - Captions, highlight markers, background removal, licensed premium assets and standalone icon creator.

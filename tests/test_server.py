@@ -2,6 +2,8 @@
 import http.client
 import importlib.util
 import json
+import io
+import struct
 from pathlib import Path
 import shutil
 import subprocess
@@ -26,12 +28,12 @@ class ServiceTests(unittest.TestCase):
         cls.httpd.shutdown()
         cls.httpd.server_close()
 
-    def request(self, method, path, host='localhost:4173', origin=None):
+    def request(self, method, path, host='localhost:4173', origin=None, payload=None):
         conn = http.client.HTTPConnection('127.0.0.1', self.httpd.server_port, timeout=5)
         headers = {'Host': host}
         if origin:
             headers['Origin'] = origin
-        conn.request(method, path, headers=headers)
+        conn.request(method, path, body=payload, headers=headers)
         response = conn.getresponse()
         result = (response.status, json.loads(response.read()))
         conn.close()
@@ -41,7 +43,8 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('GET', '/api/health')
         self.assertEqual(code, 200)
         self.assertEqual(data['service'], 'framecast-local')
-        self.assertEqual(data['version'], '0.10.4')
+        self.assertEqual(data['version'], '0.11.0')
+        self.assertTrue(data['fixedFrames'])
         self.assertIsInstance(data['ffmpeg'], bool)
 
     def test_invalid_codec_format_is_rejected(self):
@@ -62,6 +65,63 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('POST', '/api/connect/google', origin=app.ORIGIN)
         self.assertEqual(code, 400)
         self.assertIn('publish-settings.json', data['error'])
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'Install FFmpeg to test rendering')
+    def test_fixed_frame_pipeline_preserves_frame_count_and_audio(self):
+        from offline_render import FixedFrameRender
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            png = root / 'frame.png'
+            wav = root / 'tone.wav'
+            subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=red:s=160x90',
+                '-frames:v','1',str(png)],check=True)
+            subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','sine=frequency=440:sample_rate=48000',
+                '-t','1','-c:a','pcm_s16le',str(wav)],check=True)
+            settings = {'start':0,'end':1,'fps':30,'format':'mp4','quality':'Balanced','codec':'h264',
+                'audio':[{'id':'tone','start':0,'end':1,'sourceIn':0,'volume':80,'bus':'clip'}],
+                'bed':100,'clip':100,'master':100,'bass':0,'equalizer':0,'treble':0,
+                'hum':0,'noise':0,'compress':False}
+            job = FixedFrameRender(root/'job',settings,'libx264')
+            sound = wav.read_bytes()
+            job.source('tone',io.BytesIO(sound),len(sound))
+            frame = png.read_bytes()
+            payload = (struct.pack('>I',len(frame))+frame)*30
+            self.assertEqual(job.frames(io.BytesIO(payload),len(payload)),30)
+            output = root/'out.mp4'
+            self.assertGreater(job.finish(output),1000)
+            streams = json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(output)]))['streams']
+            self.assertEqual([s['codec_type'] for s in streams],['video','audio'])
+            self.assertEqual(streams[0]['nb_frames'],'30')
+            self.assertEqual(streams[0]['avg_frame_rate'],'30/1')
+            job.cancel()
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'Install FFmpeg to test rendering')
+    def test_fixed_frame_local_api_streams_sources_and_verifies_output(self):
+        with tempfile.TemporaryDirectory() as folder:
+            wav = Path(folder)/'tone.wav'
+            png = Path(folder)/'frame.png'
+            subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','sine=frequency=440',
+                '-t','0.2',str(wav)],check=True)
+            subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=s=160x90',
+                '-frames:v','1',str(png)],check=True)
+            settings = dict(start=0,end=.2,fps=30,format='mp4',quality='Balanced',codec='h264',
+                audio=[dict(id='clip1',start=0,end=.2,sourceIn=0,volume=100,bus='clip')],
+                clip=100,bed=100,master=100,bass=0,equalizer=0,treble=0,hum=0,noise=0,compress=False)
+            code, state = self.request('POST','/api/render/start',origin=app.ORIGIN,
+                payload=json.dumps(settings).encode())
+            self.assertEqual(code,200)
+            ident = state['id']
+            self.assertEqual(state['frames'],6)
+            self.assertEqual(self.request('POST',f'/api/render/source/{ident}/clip1',origin=app.ORIGIN,
+                payload=wav.read_bytes())[0],200)
+            frame = png.read_bytes()
+            batch = (struct.pack('>I',len(frame))+frame)*6
+            self.assertEqual(self.request('POST',f'/api/render/frames/{ident}',origin=app.ORIGIN,
+                payload=batch)[1]['received'],6)
+            code, finished = self.request('POST',f'/api/render/finish/{ident}',origin=app.ORIGIN,payload=b'{}')
+            self.assertEqual(code,200)
+            self.assertEqual(finished['frames'],6)
+            self.assertGreater(finished['bytes'],1000)
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'Install FFmpeg to test encoding')
     def test_all_three_containers_include_video_and_audio(self):

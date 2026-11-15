@@ -1,4 +1,4 @@
-# FrameCast Studio v0.10.4
+# FrameCast Studio v0.11.0
 
 A local-first video graphics editor with a multitrack timeline and local Live/Signage workspaces. Development checkpoint; read [BUILD-STATUS.md](BUILD-STATUS.md) for tested behaviour and remaining work.
 
@@ -6,35 +6,17 @@ A local-first video graphics editor with a multitrack timeline and local Live/Si
 
 ## Windows / your existing VS Code terminal
 
-Stop the old server with **Ctrl+C**, then run these in the same terminal:
-
-```powershell
-Set-Location D:\Framecaststudio
-git status --short
-git fetch origin
-git switch workbench/v0.10.4
-py server.py
-```
-
-Open **http://localhost:4173**. Use **Ctrl+F5** to refresh old assets. The header must say **v0.10.4**. Do not open another VS Code window.
-
-The version branch preserves the original main/baseline. If Git reports local edits would be overwritten, preserve those edits before switching; do not run a hard reset. The ZIP contains the same source without credentials or personal media.
-
-Python 3.10+ runs the local server without pip dependencies. FFmpeg on PATH enables MP4/MOV/WebM conversion; without it, browser-supported recording remains available. Node 20+ is needed only for static build/tests.
-
-## ZIP alternative
-
-If you use the release ZIP instead of Git, preserve the current folder first:
+Stop the old server with **Ctrl+C** in the existing VS Code terminal. Download the v0.11.0 ZIP, then run:
 
 ```powershell
 Set-Location D:\Framecaststudio
 $backup = "D:\Framecaststudio-backup-$(Get-Date -Format yyyyMMdd-HHmmss)"
 Copy-Item -LiteralPath D:\Framecaststudio -Destination $backup -Recurse
-Expand-Archive -LiteralPath "$env:USERPROFILE\Downloads\FrameCast-Studio-v0.10.4.zip" -DestinationPath D:\Framecaststudio -Force
+Expand-Archive -LiteralPath "$env:USERPROFILE\Downloads\FrameCast-Studio-v0.11.0.zip" -DestinationPath D:\Framecaststudio -Force
 py server.py
 ```
 
-This does not delete `.git` history or local `publish-settings.json`. Existing extra files remain. Use either Git or ZIP for the update, not both.
+Open **http://localhost:4173**, press **Ctrl+F5**, and confirm **v0.11.0** in the header. Keep the existing VS Code window. The ZIP leaves local media and `publish-settings.json` untouched. Python 3.10+ and FFmpeg/FFprobe on PATH are required for fixed-frame local export; without them, the old browser real-time export remains as a fallback.
 
 ## Ticker inspector update
 
@@ -54,7 +36,7 @@ Save a project before closing or refreshing. Session undo and a saved panel layo
 
 ## Export and publishing
 
-Use **Export & share**, choose destinations, framing, format and resolution, then render. Rendering is real time; keep the tab visible. A shared aspect ratio is rendered once for selected destinations. Browser MP4 codecs vary; use local FFmpeg for H.264/AAC.
+Use **Export & share**, choose destinations, framing, format and resolution, then render. With the local FFmpeg server, rendering advances frame by frame and can take longer than playback. Keep the tab visible while the browser supplies frames. Without the local server, browser rendering still records in real time. A shared aspect ratio is rendered once for selected destinations. Browser MP4 codecs vary; use local FFmpeg for H.264/AAC.
 
 Connected publishing needs your configured Google/Meta developer apps and eligible accounts. See [PUBLISHING.md](PUBLISHING.md). Keep secrets in local configuration, never public `dist` files or browser JavaScript. Live streaming and rendered-video publishing are separate workflows.
 
@@ -81,3 +63,7 @@ The export-range lane now shares the timeline ruler and scroll/zoom. Set In show
 In Export & share, choose MP4/MOV/WebM and a Video codec. Local FFmpeg offers H.264 MP4/MOV by default, H.265/HEVC MP4/MOV, AV1 MP4/WebM, and VP9 WebM when those encoders are installed. Unavailable options are disabled. High/Balanced/Small control codec-specific quality. HEVC/AV1 downloads can be slower to encode and may not play everywhere. Social publishing controls currently require H.264 MP4. Advanced codecs do not repair frames missed during real-time capture.
 
 In your existing Windows PowerShell terminal, check codecs with `ffmpeg -hide_banner -encoders | Select-String "libx264|libx265|libsvtav1|libaom-av1"`. If FFmpeg is absent, install an official build that includes the desired encoders, restart the terminal and FrameCast. The ZIP does not contain an FFmpeg binary.
+
+## v0.11.0 export engine
+
+The local FFmpeg path requests each output frame at a fixed timeline timestamp, sends lossless PNGs in small batches, encodes once, then mixes source audio and checks the output frame count. Use MP4/H.264 High for broad playback and publishing compatibility. Pause stops between frame batches; Cancel stops the local encoder. Browser-only and static Vercel exports still use real-time recording. One-hour and 4K projects have not passed hardware endurance testing; per-clip keyframed volume is not yet reproduced in the new server mix. See BUILD-STATUS.md.
