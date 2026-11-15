@@ -1,3 +1,7 @@
+# FrameCast Studio v0.11.5
+
+Local rendering now uses HTTP/1.1 persistent connections. Earlier builds used HTTP/1.0 and opened a new TCP connection for every frame request and batch upload, risking Windows ephemeral port exhaustion. A 1,200-request test verifies one connection is reused. FFmpeg pipe reads now have a 30-second deadline and report the source timestamp if stalled. Network failures identify the layer and source time. The user's Windows source export remains unverified; these changes address a concrete transport defect, not a guaranteed diagnosis from a screenshot.
+
 # FrameCast Studio v0.11.4
 
 The local source-frame transport now uses RGB24 PNG with explicit PNG chunk boundaries instead of an MJPEG stream. This addresses the image decode failure reported in v0.11.3. The regression test fully decodes the HTTP image payload using FFmpeg; the previous test only checked JPEG marker bytes. Nine Python service/export tests pass. Actual Windows Chrome and the user media remain unverified. This release does not claim all export issues are resolved.

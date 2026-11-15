@@ -43,9 +43,22 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('GET', '/api/health')
         self.assertEqual(code, 200)
         self.assertEqual(data['service'], 'framecast-local')
-        self.assertEqual(data['version'], '0.11.4')
+        self.assertEqual(data['version'], '0.11.5')
         self.assertTrue(data['fixedFrames'])
         self.assertIsInstance(data['ffmpeg'], bool)
+
+    def test_many_requests_reuse_one_connection(self):
+        conn = http.client.HTTPConnection('127.0.0.1', self.httpd.server_port, timeout=5)
+        original = None
+        for index in range(1200):
+            conn.request('GET','/api/health',headers={'Host':'localhost:4173'})
+            response = conn.getresponse()
+            self.assertEqual(response.status,200)
+            response.read()
+            self.assertFalse(response.will_close)
+            if original is None: original = conn.sock
+            self.assertIs(conn.sock,original)
+        conn.close()
 
     def test_invalid_codec_format_is_rejected(self):
         with self.assertRaises(ValueError):

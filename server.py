@@ -130,6 +130,7 @@ def upload(job, asset, platform, meta):
     except Exception as e: job.update(status='Failed',error=str(e),retryable=isinstance(e, ValueError) and str(e).startswith(('Provider HTTP 400:', 'Provider HTTP 401:', 'Provider HTTP 403:', 'Provider HTTP 429:')))
 
 class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
     def log_message(self,*args): pass
     def reply(self,data,typ='application/json',code=200):
         if typ=='application/json': data=json.dumps(data).encode()
@@ -147,7 +148,7 @@ class Handler(BaseHTTPRequestHandler):
                 if 'code' not in qs: raise ValueError('Sign-in cancelled or denied. Return to FrameCast and reconnect.')
                 oauth(provider,qs['code'][0]);return self.reply('Account connected. Close this tab and refresh accounts in FrameCast.','text/plain')
             if not post and route=='/api/health':
-                return self.reply(dict(service='framecast-local',version='0.11.4',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
+                return self.reply(dict(service='framecast-local',version='0.11.5',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
             if post and route=='/api/render/start':
                 if not shutil.which('ffmpeg') or not shutil.which('ffprobe'): raise ValueError('Install FFmpeg and FFprobe for fixed-frame export')
                 size=int(self.headers.get('Content-Length','0'))

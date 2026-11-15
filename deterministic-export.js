@@ -37,7 +37,7 @@ async function exactFrame(at){
   const source=sources.find(item=>item.media===media);
   if(!source)throw Error('Video source missing from local renderer');
   const safeTime=Math.max(0,Math.min(sourceTime,media.duration-1/(+$('exportFps').value)));
-  const response=await fetch('/api/render/video/'+fixedSession+'/'+encodeURIComponent(source.id)+'?t='+encodeURIComponent(safeTime),{signal:fixedRequest.signal});
+  const response=await fetch('/api/render/video/'+fixedSession+'/'+encodeURIComponent(source.id)+'?t='+encodeURIComponent(safeTime),{signal:fixedRequest.signal}).catch(error=>{if(fixedCancel)throw error;throw Error('Local video connection failed for '+(layers[source.id]?.name||source.id)+' at '+safeTime.toFixed(3)+'s. Check the Python terminal; save its error message. '+error.message)});
   if(!response.ok){const error=await response.json();throw Error(error.error||'Source frame decode failed')}
   const url=URL.createObjectURL(await response.blob());
   try{

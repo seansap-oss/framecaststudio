@@ -70,10 +70,27 @@ class VideoFrameSource:
             if wanted < self.index:
                 self.restart(target)
                 wanted = 0
-            while self.index < wanted:
-                self.last = self.next_png()
-                self.index += 1
-            return self.last
+            process = self.process
+            expired = threading.Event()
+            def deadline():
+                expired.set()
+                if process.poll() is None:
+                    try: process.kill()
+                    except OSError: pass
+            timer = threading.Timer(30, deadline)
+            timer.daemon = True
+            timer.start()
+            try:
+                while self.index < wanted:
+                    self.last = self.next_png()
+                    self.index += 1
+                return self.last
+            except (OSError, ValueError) as error:
+                if expired.is_set():
+                    raise ValueError(f'Source decoder stalled at {target:.3f}s for 30 seconds. Source: {self.path.name}') from error
+                raise ValueError(f'Source decode failed at {target:.3f}s: {error}') from error
+            finally:
+                timer.cancel()
 
 
 def video_options(fmt, preset, codec, encoder, speed='Balanced'):
