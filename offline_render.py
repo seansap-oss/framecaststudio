@@ -9,6 +9,11 @@ import threading
 from pathlib import Path
 
 
+def output_frames(settings):
+    """One output frame for each timeline timestamp strictly before the range end."""
+    return math.ceil((settings['end'] - settings['start']) * settings['fps'] - 1e-8)
+
+
 class CleanVideoEnd(EOFError):
     """No bytes for the next frame; unlike an incomplete/corrupt PNG."""
 
@@ -151,7 +156,7 @@ class FixedFrameRender:
         self.root.mkdir(parents=True, exist_ok=True)
         self.settings = settings
         self.encoder = encoder
-        self.total = math.ceil((settings['end'] - settings['start']) * settings['fps'] - 1e-8)
+        self.total = output_frames(settings)
         self.count = 0
         self.sources = {}
         self.video_decoders = {}
@@ -159,7 +164,9 @@ class FixedFrameRender:
         self.mux_process = None
         self.lock = threading.Lock()
         self.cancelled = False
-        self.silent = self.root / 'silent.mkv'
+        # MP4 preserves the encoder time base; millisecond-rounded MKV timestamps
+        # can introduce uneven 60fps timestamps when video is copied into MP4.
+        self.silent = self.root / 'silent.mp4'
         self.log = (self.root / 'ffmpeg.log').open('wb')
 
     def source(self, key, stream, size):
@@ -289,7 +296,7 @@ class FixedFrameRender:
         else:
             cmd += ['-f', 'lavfi', '-t', str(duration), '-i', 'anullsrc=r=48000:cl=stereo', '-map', '0:v:0', '-map', '1:a:0']
         cmd += ['-c:v', 'copy', '-c:a', 'libopus' if s['format'] == 'webm' else 'aac',
-                '-ar', '48000', '-b:a', '192k', '-t', str(duration)]
+                '-ar', '48000', '-b:a', '192k']
         if s['format'] != 'webm': cmd += ['-movflags', '+faststart']
         cmd += [str(output)]
         with self.lock:

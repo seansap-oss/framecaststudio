@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from offline_render import output_frames
 
 
 def number(value, low, high):
@@ -17,14 +18,14 @@ def number(value, low, high):
 
 
 def ticker_graph(settings, root):
-    w,h=settings['width'],settings['height'];fps=settings['fps'];duration=settings['end']-settings['start']
+    w,h=settings['width'],settings['height'];fps=settings['fps'];frames=output_frames(settings)
     if any(not isinstance(v,int) or v%2 or not 32<=v<=4096 for v in (w,h)):raise ValueError('Invalid output size')
     items=settings.get('nativeLayers',[])
     if not isinstance(items,list) or len(items)>128:raise ValueError('Too many native overlays')
     color=settings.get('background','#000000')
     import re
     if not re.fullmatch('#[a-fA-F0-9]{6}',color):raise ValueError('Invalid background')
-    graph=[f'[0:v]setpts=PTS-STARTPTS,scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=0x{color[1:]},setsar=1,fps={fps}:eof_action=pass,tpad=stop_mode=clone:stop_duration=0.25,trim=duration={duration}[base]']
+    graph=[f'[0:v]setpts=PTS-STARTPTS,scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=0x{color[1:]},setsar=1,fps={fps}:start_time=0:eof_action=pass,tpad=stop_mode=clone:stop={math.ceil(.25*fps)+1},trim=end_frame={frames}[base]']
     inputs=[];current='base';idx=1
     for i,item in enumerate(items):
         kind=item.get('kind');x=number(item.get('x',0),-8192,8192);y=number(item.get('y',0),-8192,8192)
@@ -59,7 +60,7 @@ def ticker_graph(settings, root):
         else:raise ValueError('Unsupported native graphic')
         enable=f'gte(t+{settings["start"]},{first})*lt(t+{settings["start"]},{last})'
         graph.append(f'[{current}][{stamp}]overlay=x={x}:y={y}:format=auto:enable=\'{enable}\'[v{i}]');current=f'v{i}'
-    graph.append(f'[{current}]format=yuv420p[out]')
+    graph.append(f'[{current}]format=yuv420p,trim=end_frame={frames},settb=expr=1/{fps},setpts=N[out]')
     return inputs,';'.join(graph)
 
 
@@ -107,7 +108,7 @@ class NativeJob:
                 else:opts+=['-preset',{'Fast':'veryfast','Balanced':'medium','Quality':'slow'}[s.get('speed','Balanced')],'-crf',str(quality),'-threads',str(min(8,os.cpu_count() or 2))]
                 cmd=['ffmpeg','-nostdin','-hide_banner','-loglevel','error','-xerror','-y','-ss',str(src_in),'-i',str(source),*extra,
                      '-filter_complex_threads','2','-filter_complex',graph,'-map','[out]','-an',
-                     '-frames:v',str(self.session.total),'-t',str(duration),*opts,
+                     '-frames:v',str(self.session.total),'-r',str(s['fps']),'-fps_mode','cfr',*opts,
                      '-progress','pipe:1','-nostats',str(self.session.silent)]
                 self.process=self.session.mux_process=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=self.session.log,text=True)
                 for line in self.process.stdout:

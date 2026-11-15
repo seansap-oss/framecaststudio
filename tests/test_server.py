@@ -43,7 +43,7 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('GET', '/api/health')
         self.assertEqual(code, 200)
         self.assertEqual(data['service'], 'framecast-local')
-        self.assertEqual(data['version'], '0.12.4')
+        self.assertEqual(data['version'], '0.12.5')
         self.assertTrue(data['fixedFrames'])
         self.assertIsInstance(data['ffmpeg'], bool)
 
@@ -92,7 +92,7 @@ class ServiceTests(unittest.TestCase):
         from test_native_render import fixture
         import time
         with tempfile.TemporaryDirectory() as folder:
-            session=fixture(Path(folder),duration=3)
+            session=fixture(Path(folder),duration=11,render_end=10.02)
             ident='native-test-session'
             app.fixed_renders[ident]=session
             code,data=self.request('POST','/api/render/native-start/'+ident,origin=app.ORIGIN,payload=b'{}')
@@ -104,8 +104,16 @@ class ServiceTests(unittest.TestCase):
                 if data['state'] in ('Complete','Failed'):break
                 time.sleep(.1)
             self.assertEqual(data['state'],'Complete',data)
-            self.assertEqual(data['frames'],session.total)
+            self.assertEqual(data['frames'],602)
             self.assertGreater(data['bytes'],1000)
+            conn=http.client.HTTPConnection('127.0.0.1',self.httpd.server_port,timeout=5)
+            conn.request('GET','/media/'+ident,headers={'Host':'localhost:4173'})
+            response=conn.getresponse();download=response.read();conn.close()
+            self.assertEqual(response.status,200)
+            self.assertEqual(len(download),data['bytes'])
+            downloaded=Path(folder)/'downloaded.mp4';downloaded.write_bytes(download)
+            from test_frame_timing import verify_output
+            verify_output(downloaded,602,60)
             code,report=self.request('GET','/api/render/diagnostics/'+ident)
             self.assertEqual(code,200);self.assertIn('ffmpeg',report)
             self.assertEqual(self.request('POST','/api/render/cancel/'+ident,origin=app.ORIGIN,payload=b'{}')[0],200)

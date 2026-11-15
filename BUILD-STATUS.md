@@ -1,3 +1,15 @@
+# v0.12.5 — fractional-duration export repair
+
+Reproduced the v0.12.4 failure: a 10.020-second export at 60 fps requested 602 frames but produced 601. The native encoder used both a rounded-up frame count and a shorter time cutoff. The repair uses one integer frame plan for filtering and encoding; audio is trimmed/padded to that frame plan without cutting the copied video stream.
+
+The intermediate video now preserves exact frame timestamps in MP4 instead of millisecond-rounded MKV timestamps. Final MP4/MOV output is checked for exact frame count and timestamp spacing in regression tests. Verification remains strict; the repair does not accept a missing frame as success.
+
+25 JavaScript tests and 22 Python tests passed, including 11 fractional-duration/range cases, a 602-frame HTTP download, all seven supported container/codec combinations on this test host, and pause/resume/cancel. No editor controls or project features were removed. A generated 10-minute 720p export with audio and two moving ticker textures completed in 156.54 seconds on the test host; all 36,005 frames and the full output decode passed.
+
+See docs/v0.12.5-validation.md for reproduction details, the long export result and the Windows verification boundary. The original user media and Windows AMD driver are not available in this environment; this is a verified repair of the reproduced timing bug, not a claim that every source file or hardware configuration is proven.
+
+---
+
 # v0.12.4 — explicit export preflight and native audio mixing
 
 Native H.264 export now accepts additional audio tracks, mute, fixed clip/master volume, EQ, hum/hiss filters and compression through the existing FFmpeg audio mixer. Audio keyframes and complex visual effects still require the full compositor.

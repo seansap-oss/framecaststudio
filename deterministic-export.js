@@ -11,7 +11,7 @@ function paintExportClock(){if(!exportClock)return;const s=exportClock.status();
 function startExportClock(){clearInterval(exportClockTimer);exportClock=new FrameCastRenderClock();paintExportClock();exportClockTimer=setInterval(paintExportClock,1000)}
 function endExportClock(ok){exportClock?.end(ok);clearInterval(exportClockTimer);paintExportClock()}
 async function renderDiagnostics(id,reason){
- let details={error:reason,version:'0.12.4'};
+ let details={error:reason,version:'0.12.5'};
  if(id)try{const r=await fetch('/api/render/diagnostics/'+id);if(r.ok)details={...details,...await r.json()}}catch{}
  const link=el('a','Download render error report');link.href=URL.createObjectURL(new Blob([JSON.stringify(details,null,2)],{type:'application/json'}));link.download='FrameCast-render-error.json';$('results').append(link);
 }

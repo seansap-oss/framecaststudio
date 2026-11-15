@@ -9,13 +9,13 @@ from offline_render import FixedFrameRender
 from native_render import NativeJob
 
 
-def fixture(root,duration=2,width=160,height=90):
+def fixture(root,duration=2,width=160,height=90,render_start=0,render_end=None,fps=60,source_in=0):
     video=root/'source.mp4'
     subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i',f'testsrc2=s={width}x{height}:r=30:d={duration}',
         '-f','lavfi','-i',f'sine=frequency=440:duration={duration+.08}',
         '-c:v','libx264','-preset','ultrafast','-c:a','aac',str(video)],check=True)
-    settings=dict(start=0,end=duration+.08,fps=60,format='mp4',quality='High',speed='Fast',codec='h264',
-        audio=[dict(id='main',start=0,end=duration+.08,sourceIn=0,volume=80,bus='clip')],clip=100,bed=100,master=100,bass=0,equalizer=0,treble=0,hum=0,noise=0,compress=False,visual=[dict(id='main')],width=width,height=height,sourceIn=0,background='#123456',
+    settings=dict(start=render_start,end=duration+.08 if render_end is None else render_end,fps=fps,format='mp4',quality='High',speed='Fast',codec='h264',
+        audio=[dict(id='main',start=0,end=duration+.08,sourceIn=0,volume=80,bus='clip')],clip=100,bed=100,master=100,bass=0,equalizer=0,treble=0,hum=0,noise=0,compress=False,visual=[dict(id='main')],width=width,height=height,sourceIn=source_in,background='#123456',
         nativeLayers=[dict(kind='horizontal',x=0,y=height-20,width=width,height=20,start=0,end=duration+.08,
             direction='left',repeat=True,speed=width,textWidth=40),
             dict(kind='vertical',x=0,y=0,width=width,height=20,start=0,end=duration+.08,

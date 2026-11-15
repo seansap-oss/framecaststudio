@@ -94,3 +94,12 @@ The export dialog shows **Elapsed** and **Estimated remaining** separately. Nati
 Run locally with `py server.py`, then open `http://localhost:4173` and press Ctrl+F5. A static Vercel deployment alone cannot run the local FFmpeg engine.
 
 See [validation results](docs/v0.12.3-validation.md) for tested behavior and remaining limitations.
+
+
+## v0.12.5 fractional-duration export repair
+
+This fixes the reproduced "expected 602 frames, got 601" failure. Native export now uses the same integer frame count throughout the pipeline, with exact frame timestamps in the intermediate MP4. Audio mixing no longer imposes a second cutoff on the copied video. Strict final frame-count verification remains enabled.
+
+Use the existing local server (`py server.py`) and MP4/H.264 with Fast local export for supported single-video/title/ticker projects. Existing editor features and the full compositor remain available. Save the project before updating, stop the server with Ctrl+C, update the code, restart, then Ctrl+F5. The header and `/api/health` both identify version 0.12.5.
+
+See [v0.12.5 test results](docs/v0.12.5-validation.md). The user's Windows source and AMD driver still require on-device verification.
