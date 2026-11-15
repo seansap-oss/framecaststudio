@@ -2,7 +2,7 @@
 // Rasterize typography once; let FFmpeg move ticker textures and encode the source directly.
 const fastToggle=document.createElement('label');
 fastToggle.innerHTML='<input id="fastExport" type="checkbox" checked> Fast local export when compatible (one video, titles and tickers)';
-$('render').before(fastToggle);
+$('progress').before(fastToggle);
 let nativeExport=false;
 function fastCandidate(settings){
  if(settings.format!=='mp4'||settings.codec!=='h264'||$('keyOn').checked||background||transitions.size)return null;
