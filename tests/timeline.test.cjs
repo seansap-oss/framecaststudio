@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { range, snap, reorder, transition, FRAME } = require('../editor-core.js');
+const { range, snap, reorder, transition, isImageLayer, FRAME } = require('../editor-core.js');
 const original = { start: 5, source: 2, duration: 8 };
 const limits = { min: 0, max: Infinity, source: 20 };
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-8, `${a} != ${b}`);
@@ -54,4 +54,11 @@ test('transition on an existing overlap leaves clip timing intact', () => {
 });
 test('transitions reject impossible durations', () => {
   for (const duration of [0, -1, NaN, 6]) assert.throws(() => transition({start:0,end:8},{start:8,end:13},duration));
+});
+test('image animation inspector accepts built-in Logo before upload and after image upload', () => {
+  assert.equal(isImageLayer({}, 'Logo', undefined), true);
+  assert.equal(isImageLayer({}, 'Logo', {tagName:'IMG'}), true);
+  assert.equal(isImageLayer({}, 'Ad', {tagName:'VIDEO'}), false);
+  assert.equal(isImageLayer({kind:'image'}, 'insert-1', {tagName:'IMG'}), true);
+  assert.equal(isImageLayer({kind:'text'}, 'Headline', undefined), false);
 });

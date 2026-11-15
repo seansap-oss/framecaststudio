@@ -1,6 +1,9 @@
 'use strict';
 // GIF frames are selected by timeline time, so offline export and scrubbing agree.
 const animatedGifAssets=new WeakMap();
+function isImageLayer(layer,key){
+ return FrameCastCore.isImageLayer(layer,key,assets[key]);
+}
 async function prepareGif(image,url){
  const blob=await (await fetch(url)).blob();
  if(blob.type.toLowerCase()!=='image/gif')return;
@@ -41,11 +44,11 @@ async function gifFrameAt(image,at){
 }
 async function prepareAnimatedImages(at){
  await Promise.all(Object.entries(assets).map(async ([key,image])=>{
-  const l=layers[key];if(l?.kind==='image'&&!l.removed&&l.visible&&at>=l.start&&(!l.end||at<l.end)&&animatedGifAssets.has(image))
+  const l=layers[key];if(isImageLayer(l,key)&&!l.removed&&l.visible&&at>=l.start&&(!l.end||at<l.end)&&animatedGifAssets.has(image))
    await gifFrameAt(image,at-l.start);
  }));
 }
-const imageImport=el('button','＋ Images');
+const imageImport=el('button','＋ Image / logo animation');
 imageImport.id='addImages';
 imageImport.onclick=()=>{insertion=null;$('inserts').accept='image/*';$('inserts').click()};
 $('addClips').before(imageImport);
@@ -72,7 +75,8 @@ document.addEventListener('keydown',e=>{if(e.key.toLowerCase()==='s'&&!e.ctrlKey
 const motionControls=el('details');motionControls.id='objectMotion';motionControls.innerHTML='<summary>Image / graphic animation</summary>'+row('Motion',select('objectAnimation',['None','Fade in / out','Slide from left','Slide from right','Slide from bottom','Zoom in','Zoom out']))+row('Animation (s)',number('objectAnimationSeconds',.1,30,.1))+row('Rotation °',number('objectRotation',-180,180,1))+row('Flip horizontally',check('objectFlip'));
 panels.Graphics.querySelector('.content').append(motionControls);
 const imageMotion=el('details');imageMotion.id='imageMotion';imageMotion.open=true;
-imageMotion.innerHTML='<summary>Image animation</summary>'+
+imageMotion.innerHTML='<summary>Image / logo animation</summary>'+
+ row('Upload / replace','<input id="animationImageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif">')+
  row('Shape',select('imageShape',['Original','Circle','Square','Rounded rectangle','Shield']))+
  row('Motion',select('imageEffect',['None','Spin','Flip horizontal','Flip vertical','Sway','Float','Pulse']))+
  row('One cycle (seconds)',number('imagePeriod',.2,120,.1))+
@@ -84,7 +88,21 @@ imageMotion.innerHTML='<summary>Image animation</summary>'+
  row('Clip duration (s)',number('imageDuration',.04,86400,.01))+
  row('Until video ends',check('imageUntilEnd'))+
  '<small>Drag or resize the image in the monitor. Drag its timeline ends to change its duration.</small>';
-motionControls.after(imageMotion);
+panels.Graphics.querySelector('.content').firstElementChild.after(imageMotion);
+$('animationImageInput').onchange=async e=>{
+ const file=e.target.files?.[0];if(!file)return;
+ const url=URL.createObjectURL(file);
+ try{
+  const image=await loadImage(url),key=selectedLayer;
+  if(isImageLayer(layers[key],key)){
+   assets[key]=image;layers[key].visible=true;layers[key].name=layers[key].name||file.name;
+   chooseLayer(key);timeline();
+  }else newLayer('image',file.name,time,5,image);
+  notify('Image ready · choose motion and duration in the Inspector');
+  if(typeof commitHistory==='function')commitHistory();
+ }catch(error){URL.revokeObjectURL(url);notify('Image import failed · '+error.message)}
+ e.target.value='';
+};
 const imageTools=el('div');imageTools.className='actions';imageTools.id='imageFitTools';
 for(const [text,handler] of [
  ['Fit canvas',l=>Object.assign(l,{x:0,y:0,w:100,h:100,crop:false})],
@@ -94,10 +112,10 @@ for(const [text,handler] of [
 motionControls.before(imageTools);
 function inspectObjectMotion(){
  const l=layers[selectedLayer];motionControls.hidden=!l||l.kind==='audio';imageTools.hidden=motionControls.hidden;
- imageMotion.hidden=!l||l.kind!=='image';
+ imageMotion.hidden=!isImageLayer(l,selectedLayer);
  if(!l)return;
  $('objectAnimation').value=l.animation||'None';$('objectAnimationSeconds').value=l.animationSeconds||.5;$('objectRotation').value=l.rotation||0;$('objectFlip').checked=!!l.flip;
- if(l.kind==='image'){
+ if(isImageLayer(l,selectedLayer)){
   for(const [id,value] of Object.entries({imageShape:l.imageShape||'Original',imageEffect:l.imageEffect||'None',imagePeriod:l.imagePeriod||4,imageDirection:l.imageDirection||'Clockwise',imageEntrance:l.imageEntrance||'None',imageExit:l.imageExit||'None',imageEdgeSeconds:l.imageEdgeSeconds||.5}))$(id).value=value;
   $('imageRepeat').checked=l.imageRepeat!==false;$('imageUntilEnd').checked=!l.end;
   $('imageDuration').value=l.end?Math.max(.04,l.end-l.start).toFixed(2):Math.max(.04,total()-l.start||5).toFixed(2);
@@ -110,10 +128,10 @@ for(const [control,field] of [['objectAnimation','animation'],['objectAnimationS
  $(control).oninput=()=>{const l=layers[selectedLayer];if(!l)return;l[field]=control==='objectFlip'?$(control).checked:control==='objectAnimation'?$(control).value:+$(control).value}
 }
 for(const id of ['imageShape','imageEffect','imagePeriod','imageDirection','imageRepeat','imageEntrance','imageExit','imageEdgeSeconds']){
- $(id).oninput=()=>{const l=layers[selectedLayer];if(l?.kind!=='image')return;l[id]=id==='imageRepeat'?$(id).checked:['imagePeriod','imageEdgeSeconds'].includes(id)?+$(id).value:$(id).value};
+ $(id).oninput=()=>{const l=layers[selectedLayer];if(!isImageLayer(l,selectedLayer))return;l[id]=id==='imageRepeat'?$(id).checked:['imagePeriod','imageEdgeSeconds'].includes(id)?+$(id).value:$(id).value};
  $(id).onchange=()=>{if(typeof commitHistory==='function')commitHistory()};
 }
-function imageLengthChanged(){const l=layers[selectedLayer];if(l?.kind!=='image')return;
+function imageLengthChanged(){const l=layers[selectedLayer];if(!isImageLayer(l,selectedLayer))return;
  l.end=$('imageUntilEnd').checked?0:l.start+Math.max(.04,+$('imageDuration').value||5);
  $('imageDuration').disabled=!l.end;$('end').value=l.end;timeline();if(typeof commitHistory==='function')commitHistory();
 }
@@ -155,11 +173,11 @@ function animatedBox(layer,t,end){
 }
 const colorGraphic=graphic;
 graphic=function(key,layer){
- const l=layer.kind==='image'?imageEdge(animatedBox(layer,time,layer.end||total()),time,layer.end||total()):animatedBox(layer,time,layer.end||total());
+ const imageLayer=isImageLayer(layer,key),l=imageLayer?imageEdge(animatedBox(layer,time,layer.end||total()),time,layer.end||total()):animatedBox(layer,time,layer.end||total());
  ctx.save();
  const cx=(l.x+l.w/2)*monitor.width/100,cy=(l.y+l.h/2)*monitor.height/100;
  let rotation=l.rotation||0,scaleX=l.flip?-1:1,scaleY=1,scale=1;
- if(l.kind==='image'&&l.imageEffect&&l.imageEffect!=='None'){
+ if(imageLayer&&l.imageEffect&&l.imageEffect!=='None'){
   const cycle=Math.max(.2,l.imagePeriod||4),elapsed=Math.max(0,time-l.start),phase=(l.imageRepeat===false?Math.min(1,elapsed/cycle):elapsed/cycle),theta=phase*Math.PI*2*(l.imageDirection==='Counterclockwise'?-1:1);
   if(l.imageEffect==='Spin')rotation+=theta*180/Math.PI;
   if(l.imageEffect==='Flip horizontal')scaleX*=Math.max(.02,Math.abs(Math.cos(theta)));
@@ -169,7 +187,7 @@ graphic=function(key,layer){
   if(l.imageEffect==='Pulse')scale=1+.08*Math.sin(theta);
  }
  ctx.translate(cx,cy);ctx.rotate(rotation*Math.PI/180);ctx.scale(scaleX*scale,scaleY*scale);ctx.translate(-cx,-cy);
- if(l.kind==='image')clipImageShape(ctx,l.imageShape,l.x*monitor.width/100,l.y*monitor.height/100,l.w*monitor.width/100,l.h*monitor.height/100);
+ if(imageLayer)clipImageShape(ctx,l.imageShape,l.x*monitor.width/100,l.y*monitor.height/100,l.w*monitor.width/100,l.h*monitor.height/100);
  const image=assets[key],gif=animatedGifAssets.get(image);
  if(gif){assets[key]=gif.cache.get(gifIndex(gif,time-l.start))||gif.last||image;
   if(!gif.cache.has(gifIndex(gif,time-l.start)))gifFrameAt(image,time-l.start).catch(e=>notify(e.message))}

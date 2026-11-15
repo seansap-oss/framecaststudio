@@ -1,4 +1,10 @@
-# FrameCast Studio v0.11.1 — working development checkpoint
+# FrameCast Studio v0.11.2 — working development checkpoint
+
+## Logo animation discovery fix (v0.11.2)
+
+The v0.11.1 image animation panel appeared only when the selected layer had `kind: image`. The built-in Logo/Watermark/Ad layers have no `kind`, so uploading a logo through the existing asset control left the animation panel hidden. The panel now appears immediately below the layer selector for Logo, Watermark, Ad image assets and imported image clips. It includes a direct Upload / replace control. Both that control and the original Logo / ad asset control select the image and refresh the inspector. The motion renderer and timed GIF selection now apply to those built-in image assets too. Media has a clearer `+ Image / logo animation` button for creating new image layers.
+
+**Verification:** unit test covers the previously hidden built-in Logo and imported images; JavaScript syntax, server tests and static build pass. Actual interaction on the user's Windows Chrome remains unverified until the updated branch is installed and tested there.
 
 ## Export repair and reusable image motion (v0.11.1)
 

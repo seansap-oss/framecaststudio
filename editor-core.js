@@ -44,7 +44,11 @@
     if (Math.min(a.end, b.end) - Math.max(a.start, b.start) < duration - .00001) start = a.end - duration;
     return { start, end: start + b.end - b.start, duration };
   }
-  const api = { FPS, FRAME, range, snap, reorder, transition };
+  function isImageLayer(layer, key, asset) {
+    return !!layer && (layer.kind === 'image' || asset?.tagName === 'IMG' ||
+      (['Logo','Watermark','Ad'].includes(key) && asset?.tagName !== 'VIDEO'));
+  }
+  const api = { FPS, FRAME, range, snap, reorder, transition, isImageLayer };
   if (typeof module !== 'undefined') module.exports = api;
   else root.FrameCastCore = api;
 })(typeof window === 'undefined' ? globalThis : window);
