@@ -1,3 +1,7 @@
+# FrameCast Studio v0.12.0 — fast export preview
+
+Fast export adds direct FFmpeg compositing for one full-screen source video, static graphics and source audio. AMD h264_amf is attempted when listed by FFmpeg, with CPU fallback if unavailable at runtime. More complex projects continue through the existing fixed-frame path. An integration test verifies frame count, overlay pixels and audio using a generated source. Actual five-minute target for ten minutes of media remains unverified on the user's hardware. Dynamic tickers are not eligible yet.
+
 # FrameCast Studio v0.11.5
 
 Local rendering now uses HTTP/1.1 persistent connections. Earlier builds used HTTP/1.0 and opened a new TCP connection for every frame request and batch upload, risking Windows ephemeral port exhaustion. A 1,200-request test verifies one connection is reused. FFmpeg pipe reads now have a 30-second deadline and report the source timestamp if stalled. Network failures identify the layer and source time. The user's Windows source export remains unverified; these changes address a concrete transport defect, not a guaranteed diagnosis from a screenshot.

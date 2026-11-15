@@ -43,7 +43,7 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('GET', '/api/health')
         self.assertEqual(code, 200)
         self.assertEqual(data['service'], 'framecast-local')
-        self.assertEqual(data['version'], '0.11.5')
+        self.assertEqual(data['version'], '0.12.0')
         self.assertTrue(data['fixedFrames'])
         self.assertIsInstance(data['ffmpeg'], bool)
 
@@ -135,6 +135,29 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(code,200)
             self.assertEqual(finished['frames'],6)
             self.assertGreater(finished['bytes'],1000)
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'Install FFmpeg to test fast export')
+    def test_fast_export_composites_overlay_and_preserves_audio(self):
+        with tempfile.TemporaryDirectory() as folder:
+            video=Path(folder)/'source.mp4';overlay=Path(folder)/'overlay.png'
+            subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=blue:s=160x90:r=30',
+                '-f','lavfi','-i','sine=frequency=440','-t','1','-c:v','libx264','-c:a','aac',str(video)],check=True)
+            subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=red@0.5:s=160x90',
+                '-frames:v','1','-pix_fmt','rgba',str(overlay)],check=True)
+            settings=dict(start=0,end=1,fps=30,format='mp4',quality='High',speed='Fast',codec='h264',
+                audio=[],visual=[dict(id='main')],width=160,height=90,sourceIn=0)
+            code,data=self.request('POST','/api/render/start',origin=app.ORIGIN,payload=json.dumps(settings).encode())
+            self.assertEqual(code,200,data);ident=data['id']
+            self.assertEqual(self.request('POST',f'/api/render/source/{ident}/main',origin=app.ORIGIN,payload=video.read_bytes())[0],200)
+            self.assertEqual(self.request('POST',f'/api/render/fast-overlay/{ident}',origin=app.ORIGIN,payload=overlay.read_bytes())[0],200)
+            code,data=self.request('POST',f'/api/render/fast-finish/{ident}',origin=app.ORIGIN,payload=b'{}')
+            self.assertEqual(code,200,data)
+            self.assertEqual(data['frames'],30)
+            streams=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(app.renders[ident])]))['streams']
+            self.assertEqual({item['codec_type'] for item in streams},{'video','audio'})
+            pixels=subprocess.check_output(['ffmpeg','-v','error','-i',str(app.renders[ident]),'-frames:v','1','-f','rawvideo','-pix_fmt','rgb24','pipe:1'])
+            center=(45*160+80)*3
+            self.assertGreater(pixels[center],pixels[center+1])
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'Install FFmpeg to test video decoding')
     def test_video_frames_decode_sequentially_without_browser_seeking(self):

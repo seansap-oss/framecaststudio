@@ -148,7 +148,7 @@ class Handler(BaseHTTPRequestHandler):
                 if 'code' not in qs: raise ValueError('Sign-in cancelled or denied. Return to FrameCast and reconnect.')
                 oauth(provider,qs['code'][0]);return self.reply('Account connected. Close this tab and refresh accounts in FrameCast.','text/plain')
             if not post and route=='/api/health':
-                return self.reply(dict(service='framecast-local',version='0.11.5',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
+                return self.reply(dict(service='framecast-local',version='0.12.0',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
             if post and route=='/api/render/start':
                 if not shutil.which('ffmpeg') or not shutil.which('ffprobe'): raise ValueError('Install FFmpeg and FFprobe for fixed-frame export')
                 size=int(self.headers.get('Content-Length','0'))
@@ -180,6 +180,43 @@ class Handler(BaseHTTPRequestHandler):
                 ident=route.split('/')[-1]
                 count=fixed_renders[ident].frames(self.rfile,int(self.headers.get('Content-Length','0')))
                 return self.reply(dict(received=count))
+            if post and route.startswith('/api/render/fast-overlay/'):
+                ident=route.split('/')[-1];session=fixed_renders[ident]
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<32*1024**2:raise ValueError('Invalid overlay size')
+                data=self.rfile.read(size)
+                if not data.startswith(b'\x89PNG\r\n\x1a\n'):raise ValueError('Expected PNG overlay')
+                (session.root/'overlay.png').write_bytes(data)
+                return self.reply(dict(ok=True))
+            if post and route.startswith('/api/render/fast-finish/'):
+                ident=route.split('/')[-1];session=fixed_renders[ident];s=session.settings
+                if session.cancelled or len(s.get('visual',[]))!=1 or s['codec']!='h264' or s['format']!='mp4':raise ValueError('Fast export requires one H.264 MP4 video')
+                key=s['visual'][0]['id'];source=session.sources.get(key);overlay=session.root/'overlay.png'
+                if not source or not overlay.exists():raise ValueError('Upload video and overlay first')
+                width,height=s.get('width'),s.get('height')
+                if not all(isinstance(v,int) and 32<=v<=4096 and v%2==0 for v in (width,height)):raise ValueError('Invalid dimensions')
+                output=Path(temp.name)/(ident+'.mp4')
+                source_in=float(s.get('sourceIn',0));duration=(s['end']-s['start'])
+                if source_in<0:raise ValueError('Invalid source time')
+                encoder='h264_amf' if 'h264_amf' in subprocess.check_output(['ffmpeg','-hide_banner','-encoders'],text=True,errors='replace') else 'libx264'
+                opts=['-c:v',encoder,'-pix_fmt','yuv420p']
+                if encoder=='h264_amf':opts+=['-quality','speed' if s.get('speed')=='Fast' else 'balanced','-rc','cqp','-qp_i','20','-qp_p','22']
+                else:opts+=['-preset','veryfast' if s.get('speed')=='Fast' else 'medium','-crf','18' if s['quality']=='High' else '23']
+                cmd=['ffmpeg','-nostdin','-hide_banner','-loglevel','error','-y','-ss',str(source_in),'-i',str(source),'-i',str(overlay),'-filter_complex',f'[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1[base];[base][1:v]overlay=0:0:format=auto,fps={s["fps"]}[out]','-map','[out]','-map','0:a:0?','-t',str(duration),*opts,'-c:a','aac','-b:a','192k','-movflags','+faststart',str(output)]
+                session.mux_process=subprocess.Popen(cmd,stderr=session.log)
+                failed=session.mux_process.wait()
+                if failed and encoder=='h264_amf' and not session.cancelled:
+                    encoder='libx264'
+                    cpu=['-c:v','libx264','-pix_fmt','yuv420p','-preset','veryfast','-crf','18' if s['quality']=='High' else '23']
+                    cmd=cmd[:cmd.index('-c:v')]+cpu+cmd[cmd.index('-c:a'):]
+                    session.mux_process=subprocess.Popen(cmd,stderr=session.log)
+                    failed=session.mux_process.wait()
+                if failed:raise ValueError('Fast encoding failed; check FFmpeg log')
+                if session.cancelled:raise ValueError('Render cancelled')
+                probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0','-count_frames','-show_entries','stream=nb_read_frames','-of','json',str(output)]))
+                frames=int(probe['streams'][0]['nb_read_frames'])
+                renders[ident]=output;render_codecs[ident]='h264';del fixed_renders[ident];session.cancel()
+                return self.reply(dict(id=ident,bytes=output.stat().st_size,frames=frames,encoder=encoder))
             if post and route.startswith('/api/render/finish/'):
                 ident=route.split('/')[-1];session=fixed_renders[ident]
                 output=Path(temp.name)/(ident+'.'+session.settings['format'])
