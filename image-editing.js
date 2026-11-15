@@ -72,11 +72,12 @@ async function splitSelected(){
 }
 splitButton.onclick=splitSelected;
 document.addEventListener('keydown',e=>{if(e.key.toLowerCase()==='s'&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.target.closest('input,textarea,select,[contenteditable]')){e.preventDefault();splitSelected()}});
-const motionControls=el('details');motionControls.id='objectMotion';motionControls.innerHTML='<summary>Image / graphic animation</summary>'+row('Motion',select('objectAnimation',['None','Fade in / out','Slide from left','Slide from right','Slide from bottom','Zoom in','Zoom out']))+row('Animation (s)',number('objectAnimationSeconds',.1,30,.1))+row('Rotation °',number('objectRotation',-180,180,1))+row('Flip horizontally',check('objectFlip'));
+const motionControls=el('details');motionControls.id='objectMotion';motionControls.innerHTML='<summary>Other graphic motion</summary>'+row('Motion',select('objectAnimation',['None','Fade in / out','Slide from left','Slide from right','Slide from bottom','Zoom in','Zoom out']))+row('Animation (s)',number('objectAnimationSeconds',.1,30,.1))+row('Rotation °',number('objectRotation',-180,180,1))+row('Flip horizontally',check('objectFlip'));
 panels.Graphics.querySelector('.content').append(motionControls);
 const imageMotion=el('details');imageMotion.id='imageMotion';imageMotion.open=true;
-imageMotion.innerHTML='<summary>Image / logo animation</summary>'+
- row('Upload / replace','<input id="animationImageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif">')+
+imageMotion.innerHTML='<summary>＋ Add image / logo and animate</summary>'+
+ row('Upload image / logo','<input id="animationImageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif">')+
+ '<small>Upload creates a new image layer. Select an image or Logo layer first to replace its picture.</small>'+
  row('Shape',select('imageShape',['Original','Circle','Square','Rounded rectangle','Shield']))+
  row('Motion',select('imageEffect',['None','Spin','Flip horizontal','Flip vertical','Sway','Float','Pulse']))+
  row('One cycle (seconds)',number('imagePeriod',.2,120,.1))+
@@ -112,7 +113,8 @@ for(const [text,handler] of [
 motionControls.before(imageTools);
 function inspectObjectMotion(){
  const l=layers[selectedLayer];motionControls.hidden=!l||l.kind==='audio';imageTools.hidden=motionControls.hidden;
- imageMotion.hidden=!isImageLayer(l,selectedLayer);
+ imageMotion.hidden=false;
+ for(const control of imageMotion.querySelectorAll('input,select'))if(control.id!=='animationImageInput')control.disabled=!isImageLayer(l,selectedLayer);
  if(!l)return;
  $('objectAnimation').value=l.animation||'None';$('objectAnimationSeconds').value=l.animationSeconds||.5;$('objectRotation').value=l.rotation||0;$('objectFlip').checked=!!l.flip;
  if(isImageLayer(l,selectedLayer)){

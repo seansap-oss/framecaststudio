@@ -1,4 +1,8 @@
-# FrameCast Studio v0.12.0 — fast export preview
+# v0.12.1 image uploader visibility
+
+The Inspector always shows Add image / logo and animate directly under the layer selector. Upload creates a new image layer or replaces a selected image/Logo layer. Motion settings remain disabled until an eligible image is selected. The separate older generic graphic motion section is labelled accordingly.
+
+# FrameCast Studio v0.12.1 — fast export preview
 
 Fast export adds direct FFmpeg compositing for one full-screen source video, static graphics and source audio. AMD h264_amf is attempted when listed by FFmpeg, with CPU fallback if unavailable at runtime. More complex projects continue through the existing fixed-frame path. An integration test verifies frame count, overlay pixels and audio using a generated source. Actual five-minute target for ten minutes of media remains unverified on the user's hardware. Dynamic tickers are not eligible yet.
 
