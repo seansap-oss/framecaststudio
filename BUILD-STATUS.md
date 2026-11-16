@@ -1,3 +1,7 @@
+# v0.12.9 — clarify optional export size
+
+Removed the misleading prefilled 40 MB value. Quality preset remains the default and does not impose a size cap. Select Target size before rendering to enter an approximate MB budget; the field is focused when selected. During rendering, all export settings remain locked until completion/cancellation. No encoder or editor changes.
+
 # v0.12.8 — export panel startup fix
 
 The target-size change in v0.12.7 accessed its select before the new panel entered the DOM. This raised a null error at publish.js:11, prevented publishing initialization and left the render action failing because bridgeReady was undefined. Attach the panel before binding its controls. The export controls and render preparation are now verified in a DOM startup regression test and JavaScript unit tests; Chromium could not launch in this restricted test environment. No editing layout changes.

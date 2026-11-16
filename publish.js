@@ -3,13 +3,13 @@ let bridge=false;
 let bridgeInfo={ffmpeg:false};
 const formatPanel=el('section');
 formatPanel.innerHTML=row('File format',select('container',['MP4','MOV','WebM']))+row('Video codec','<select id="videoCodec"></select>')+row('Output quality',select('quality',['High','Balanced','Small']))+row('Encoding speed',select('encodingSpeed',['Fast','Balanced','Quality']))+row('Export frame rate',select('exportFps',['60','30']))+'<p id="encoderState" class="helpText">Checking available encoders…</p>';
-formatPanel.insertAdjacentHTML('beforeend',row('File size mode',select('sizeMode',['Quality preset','Target size']))+row('Target size (MB)','<input id="targetMB" type="number" min="1" max="100000" step="1" value="40" disabled>')+'<p id="sizeHelp" class="helpText">Quality preset keeps the existing export settings.</p>');
+formatPanel.insertAdjacentHTML('beforeend',row('File size mode',select('sizeMode',['Quality preset','Target size']))+row('Target file size (MB)','<input id="targetMB" type="number" min="1" max="100000" step="1" placeholder="Enter your target MB" disabled>')+'<p id="sizeHelp" class="helpText">No fixed size. Quality is controlled by the output quality preset.</p>');
 $('settingsHost').before(formatPanel);
 function sizeSettings(){
  const enabled=$('sizeMode').value==='Target size';$('targetMB').disabled=!enabled;
- $('sizeHelp').textContent=enabled?'Approximate size per exported version, including audio. H.264 only. Smaller targets reduce image quality; actual size can vary.':'Quality preset keeps the existing export settings.';
+ $('sizeHelp').textContent=enabled?'Enter any target from 1 to 100,000 MB. Approximate size per file, including audio. Smaller targets reduce quality.':'No fixed size. Quality is controlled by the output quality preset.';
 }
-$('sizeMode').onchange=sizeSettings;
+$('sizeMode').onchange=()=>{sizeSettings();if($('sizeMode').value==='Target size')$('targetMB').focus()};
 const accountPanel=el('details');accountPanel.open=true;
 accountPanel.innerHTML='<summary>Connected publishing</summary><div class="actions"><button id="googleLogin">Connect YouTube</button><button id="metaLogin">Connect Facebook & Instagram</button><button id="refreshLogin">Check connection</button></div><p id="accountState" role="status"></p>'+row('Facebook Page','<select id="pageAccount"></select>')+row('YouTube visibility',select('privacy',['private','unlisted','public']));
 $('destinations').before(accountPanel);
