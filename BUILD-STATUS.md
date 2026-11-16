@@ -1,3 +1,7 @@
+# v0.12.8 — export panel startup fix
+
+The target-size change in v0.12.7 accessed its select before the new panel entered the DOM. This raised a null error at publish.js:11, prevented publishing initialization and left the render action failing because bridgeReady was undefined. Attach the panel before binding its controls. The export controls and render preparation are now verified in a DOM startup regression test and JavaScript unit tests; Chromium could not launch in this restricted test environment. No editing layout changes.
+
 # v0.12.7 — predictable size controls and safer publishing
 
 New target-size control for local H.264 export: decimal MB budget, 128 kbps audio, overhead allowance, average bitrate for libx264 or AMD AMF. Quality presets remain available. Impossible budgets are rejected before encoding; single-pass size is approximate, not guaranteed.
