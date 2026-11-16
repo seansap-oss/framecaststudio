@@ -1,3 +1,9 @@
+# v0.12.10 — finite audio padding and finalization watchdog repair
+
+Final audio padding now has an explicit sample bound. Finalization progress tracks advancing media timestamps and output bytes instead of the entire FFmpeg status text (speed/fps updates previously kept resetting the stall timer). A total active-time limit also prevents endless finalization even with tiny continuing writes. Pauses are excluded. Progress history reads are bounded to 64 KB and the closing-file stage is distinguished once audio reaches the end.
+
+This addresses concrete finalization defects; the original Windows media and driver are still unavailable, so the user's exact long-running export remains unverified. No commercial-readiness or speed guarantee.
+
 # v0.12.9 — clarify optional export size
 
 Removed the misleading prefilled 40 MB value. Quality preset remains the default and does not impose a size cap. Select Target size before rendering to enter an approximate MB budget; the field is focused when selected. During rendering, all export settings remain locked until completion/cancellation. No encoder or editor changes.

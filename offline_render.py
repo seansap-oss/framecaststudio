@@ -11,6 +11,22 @@ import time
 from pathlib import Path
 
 
+class FinalizationWatch:
+    """Only advancing media time/bytes counts; FFmpeg speed/fps chatter does not."""
+    def __init__(self, duration, now):
+        self.duration=duration;self.last=now;self.started=now;self.previous=now
+        self.media=0;self.size=0;self.paused_time=0
+    def check(self, media, size, now, paused=False):
+        delta=max(0,now-self.previous);self.previous=now
+        if paused:
+            self.paused_time+=delta;self.last=now;return
+        if media>self.media or size>self.size:self.last=now
+        self.media=max(self.media,media);self.size=max(self.size,size)
+        if now-self.last>120:raise ValueError('Audio/file finalization made no progress for 120 seconds. Download the render error report.')
+        if now-self.started-self.paused_time>max(180,self.duration*2+60):
+            raise ValueError('Audio/file finalization exceeded its time limit. Download the render error report.')
+
+
 def output_frames(settings):
     """One output frame for each timeline timestamp strictly before the range end."""
     return math.ceil((settings['end'] - settings['start']) * settings['fps'] - 1e-8)
@@ -311,7 +327,7 @@ class FixedFrameRender:
                 threshold = 10 ** (float(s.get('threshold', -20)) / 20)
                 effects.append(f'acompressor=threshold={threshold:.6f}:ratio={float(s.get("ratio", 3)):.2f}')
             effects.append(f'volume={s["master"]/100:.6f}')
-            filters.append(last+','.join(effects)+f',apad,atrim=duration={duration:.6f}[out]')
+            filters.append(last+','.join(effects)+f',apad=whole_len={round(duration*48000)},atrim=end_sample={round(duration*48000)}[out]')
             cmd += ['-filter_complex', ';'.join(filters), '-map', '0:v:0', '-map', '[out]']
         else:
             cmd += ['-f', 'lavfi', '-t', str(duration), '-i', 'anullsrc=r=48000:cl=stereo', '-map', '0:v:0', '-map', '1:a:0']
@@ -324,21 +340,24 @@ class FixedFrameRender:
         with self.lock:
             if self.cancelled: raise ValueError('Render cancelled')
             self.mux_process = subprocess.Popen(cmd, stderr=self.log)
-        changed = time.monotonic(); previous = None
+        watch=FinalizationWatch(duration,time.monotonic())
         while self.mux_process.poll() is None:
             if self.cancelled: raise ValueError('Render cancelled')
-            payload = progress.read_text(errors='replace') if progress.exists() else ''
+            payload=''
+            if progress.exists():
+                with progress.open('rb') as handle:
+                    handle.seek(max(0,progress.stat().st_size-65536))
+                    payload=handle.read().decode(errors='replace')
             size = output.stat().st_size if output.exists() else 0
-            marker = (payload, size)
-            if marker != previous: changed = time.monotonic(); previous = marker
             for line in payload.splitlines():
                 if line.startswith('out_time_us='):
-                    try: self.final_seconds = int(line.split('=')[1]) / 1e6
+                    try: self.final_seconds = max(self.final_seconds,int(line.split('=')[1]) / 1e6)
                     except ValueError: pass
-            if self.paused: changed=time.monotonic()
-            if time.monotonic() - changed > 120:
-                self.mux_process.kill(); self.mux_process.wait()
-                raise ValueError('Audio/file finalization made no progress for 120 seconds. Download the render error report.')
+            if self.final_seconds>=duration-.1:self.stage='Closing MP4 / preparing playback'
+            try:watch.check(self.final_seconds,size,time.monotonic(),self.paused)
+            except ValueError:
+                self.mux_process.kill();self.mux_process.wait()
+                raise
             time.sleep(.2)
         if self.mux_process.returncode: raise ValueError('Audio mix failed; check FFmpeg log')
         self.stage = 'Checking output frame count' 
