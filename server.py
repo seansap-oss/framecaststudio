@@ -2,6 +2,8 @@
 import json, os, re, secrets, shutil, subprocess, tempfile, threading, time, webbrowser, socket, traceback
 from offline_render import FixedFrameRender
 from native_render import NativeJob
+from export_budget import budget
+from upload_transport import youtube_upload, youtube_processing, ProgressReader
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlencode, urlparse, parse_qs
@@ -90,16 +92,16 @@ def google_token():
 def upload(job, asset, platform, meta):
     try:
         path=renders[asset]
-        job['status']='Uploading'
+        job.update(status='Uploading',started=time.time(),bytesSent=0)
         size=str(path.stat().st_size)
         caption='\n'.join(filter(None,[meta.get('caption'),meta.get('tags')]))
         if platform.startswith('YouTube'):
             body={'snippet':{'title':meta['title'],'description':caption},'status':{'privacyStatus':meta['privacy']}}
             headers={**auth(google_token()),'Content-Type':'application/json','X-Upload-Content-Type':'video/mp4','X-Upload-Content-Length':size}
             session=http('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status','POST',json.dumps(body).encode(),headers,True)['Location']
-            with path.open('rb') as f:
-                result=http(session,'PUT',f,{'Content-Type':'video/mp4','Content-Length':size})
-            job.update(status='Uploaded · processing on YouTube',id=result['id'])
+            result=youtube_upload(path,session,google_token,job)
+            job.update(id=result['id'],uploadSeconds=round(time.time()-job['started'],1))
+            youtube_processing(job,lambda:http('https://www.googleapis.com/youtube/v3/videos?'+urlencode(dict(part='processingDetails,status',id=result['id'])),headers=auth(google_token())))
             return
         page=tokens['pages'][meta['page']]
         token=page['access_token']
@@ -114,7 +116,7 @@ def upload(job, asset, platform, meta):
             target=init['upload_url'];ident=init['video_id']
         if urlparse(target).hostname!='rupload.facebook.com' or urlparse(target).scheme!='https': raise ValueError('Unexpected Meta upload host')
         with path.open('rb') as f:
-            http(target,'POST',f,{'Authorization':'OAuth '+token,'offset':'0','file_size':size,'Content-Length':size,'Content-Type':'application/octet-stream'})
+            http(target,'POST',ProgressReader(f,job,int(size)),{'Authorization':'OAuth '+token,'offset':'0','file_size':size,'Content-Length':size,'Content-Type':'application/octet-stream'})
         if instagram:
             job['status']='Processing on Instagram'
             for _ in range(120):
@@ -129,7 +131,8 @@ def upload(job, asset, platform, meta):
             result=http(endpoint,'POST',dict(upload_phase='finish',video_id=ident,video_state='PUBLISHED',description=caption,title=meta['title']),auth(token))
             if not result.get('success'): raise ValueError('Facebook did not accept the publish request')
             job.update(status='Accepted by Facebook',id=ident)
-    except Exception as e: job.update(status='Failed',error=str(e),retryable=isinstance(e, ValueError) and str(e).startswith(('Provider HTTP 400:', 'Provider HTTP 401:', 'Provider HTTP 403:', 'Provider HTTP 429:')))
+    except Exception as e: job.update(status='Failed',error=str(e),retryable=False)
+    finally: job['elapsed']=round(time.time()-job.get('started',time.time()),1)
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -160,7 +163,7 @@ class Handler(BaseHTTPRequestHandler):
                 if 'code' not in qs: raise ValueError('Sign-in cancelled or denied. Return to FrameCast and reconnect.')
                 oauth(provider,qs['code'][0]);return self.reply('Account connected. Close this tab and refresh accounts in FrameCast.','text/plain')
             if not post and route=='/api/health':
-                return self.reply(dict(service='framecast-local',version='0.12.6',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
+                return self.reply(dict(service='framecast-local',version='0.12.7',ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
             if post and route=='/api/render/start':
                 if not shutil.which('ffmpeg') or not shutil.which('ffprobe'): raise ValueError('Install FFmpeg and FFprobe for fixed-frame export')
                 size=int(self.headers.get('Content-Length','0'))
@@ -173,6 +176,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(settings.get('audio'),list) or len(settings['audio'])>256 or not isinstance(settings.get('visual'),list) or len(settings['visual'])>256:raise ValueError('Invalid media sources')
                 for entry in settings['audio']+settings['visual']:
                     if not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}',entry.get('id','')):raise ValueError('Invalid media source ID')
+                budget(settings)
                 ident=secrets.token_hex(16)
                 fixed_renders[ident]=FixedFrameRender(Path(temp.name)/('fixed-'+ident),settings,encoder)
                 return self.reply(dict(id=ident,frames=fixed_renders[ident].total))
@@ -237,6 +241,7 @@ class Handler(BaseHTTPRequestHandler):
             if post and route.startswith('/api/render/fast-finish/'):
                 ident=route.split('/')[-1];session=fixed_renders[ident];s=session.settings
                 if session.cancelled or len(s.get('visual',[]))!=1 or s['codec']!='h264' or s['format']!='mp4':raise ValueError('Fast export requires one H.264 MP4 video')
+                if budget(s):raise ValueError('Target size requires native or fixed-frame export, not the legacy overlay endpoint')
                 key=s['visual'][0]['id'];source=session.sources.get(key);overlay=session.root/'overlay.png'
                 if not source or not overlay.exists():raise ValueError('Upload video and overlay first')
                 width,height=s.get('width'),s.get('height')
@@ -323,6 +328,12 @@ class Handler(BaseHTTPRequestHandler):
                     page=tokens.get('pages',{}).get(m.get('page'))
                     if not page:raise ValueError('Choose a connected Facebook Page')
                     if platform=='Instagram Reels' and not page.get('instagram_business_account'):raise ValueError('Select a Page linked to Instagram')
+                if not isinstance(m.get('title'),str) or not m['title'].strip():raise ValueError('Enter a video title before publishing')
+                if platform.startswith('YouTube') and len(m['title'])>100:raise ValueError('YouTube title must be at most 100 characters')
+                if platform=='YouTube Shorts':
+                    probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=width,height:format=duration','-of','json',str(renders[asset])],timeout=30))
+                    video=probe['streams'][0]
+                    if float(probe['format']['duration'])>180 or video['width']>video['height']:raise ValueError('YouTube Shorts requires a square or vertical video of at most 3 minutes. Export a shorter portrait range or choose YouTube.')
                 key=(asset,('YouTube' if platform.startswith('YouTube') else platform),m['page'] if not platform.startswith('YouTube') else tokens['google']['channel_id'])
                 with lock:
                     existing=next((i for i,j in jobs.items() if j['key']==key and not j.get('retryable')),None)
@@ -330,7 +341,9 @@ class Handler(BaseHTTPRequestHandler):
                     ident=secrets.token_hex(16);job=jobs[ident]=dict(key=key,status='Queued')
                     threading.Thread(target=upload,args=(job,asset,platform,m),daemon=True).start()
                 return self.reply(dict(id=ident))
-            if not post and route.startswith('/api/job/'):return self.reply(jobs[route.split('/')[-1]])
+            if not post and route.startswith('/api/job/'):
+                job=jobs[route.split('/')[-1]]
+                return self.reply({**job,'elapsed':job.get('elapsed',round(time.time()-job.get('started',time.time()),1))})
             name=route.lstrip('/') or 'index.html'
             if not post and name in PUBLIC:return self.reply((ROOT/name).read_bytes(),{'html':'text/html','js':'text/javascript','css':'text/css'}[name.split('.')[-1]]+'; charset=utf-8')
             return self.reply({},code=404)

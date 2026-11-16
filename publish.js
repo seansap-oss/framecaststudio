@@ -2,7 +2,13 @@
 let bridge=false;
 let bridgeInfo={ffmpeg:false};
 const formatPanel=el('section');
-formatPanel.innerHTML=row('File format',select('container',['MP4','MOV','WebM']))+row('Video codec','<select id="videoCodec"></select>')+row('Compression',select('quality',['High','Balanced','Small']))+row('Encoding speed',select('encodingSpeed',['Fast','Balanced','Quality']))+row('Export frame rate',select('exportFps',['60','30']))+'<p id="encoderState" class="helpText">Checking available encoders…</p>';
+formatPanel.innerHTML=row('File format',select('container',['MP4','MOV','WebM']))+row('Video codec','<select id="videoCodec"></select>')+row('Output quality',select('quality',['High','Balanced','Small']))+row('Encoding speed',select('encodingSpeed',['Fast','Balanced','Quality']))+row('Export frame rate',select('exportFps',['60','30']))+'<p id="encoderState" class="helpText">Checking available encoders…</p>';
+formatPanel.insertAdjacentHTML('beforeend',row('File size mode',select('sizeMode',['Quality preset','Target size']))+row('Target size (MB)','<input id="targetMB" type="number" min="1" max="100000" step="1" value="40" disabled>')+'<p id="sizeHelp" class="helpText">Quality preset keeps the existing export settings.</p>');
+function sizeSettings(){
+ const enabled=$('sizeMode').value==='Target size';$('targetMB').disabled=!enabled;
+ $('sizeHelp').textContent=enabled?'Approximate size per exported version, including audio. H.264 only. Smaller targets reduce image quality; actual size can vary.':'Quality preset keeps the existing export settings.';
+}
+$('sizeMode').onchange=sizeSettings;
 $('settingsHost').before(formatPanel);
 const accountPanel=el('details');accountPanel.open=true;
 accountPanel.innerHTML='<summary>Connected publishing</summary><div class="actions"><button id="googleLogin">Connect YouTube</button><button id="metaLogin">Connect Facebook & Instagram</button><button id="refreshLogin">Check connection</button></div><p id="accountState" role="status"></p>'+row('Facebook Page','<select id="pageAccount"></select>')+row('YouTube visibility',select('privacy',['private','unlisted','public']));
@@ -34,6 +40,8 @@ function encoderStatus(){
  const names={h264:'H.264 / AVC — publishing default',hevc:'H.265 / HEVC — download',av1:'AV1 — download',vp9:'VP9'};
  if(local){for(const id of allowed){const option=new Option(names[id]+(bridgeInfo.encoders?.[id]?'':' (not installed)'),id);option.disabled=!bridgeInfo.encoders?.[id];picker.add(option)}picker.value=allowed.includes(previous)&&bridgeInfo.encoders?.[previous]?previous:allowed.find(id=>bridgeInfo.encoders?.[id])||'';}else picker.add(new Option('Browser default','auto'));
  picker.disabled=!local;
+ $('sizeMode').disabled=!local||!bridgeInfo.fixedFrames;
+ if($('sizeMode').disabled)$('sizeMode').value='Quality preset';sizeSettings();
  const native=recordingMime();
  $('encoderState').textContent=bridge&&bridgeInfo.ffmpeg?(picker.value?'Local FFmpeg · '+(bridgeInfo.fixedFrames?'fixed-frame export · ':'')+names[picker.value]+'. '+(['hevc','av1'].includes(picker.value)?'Software encoding may take longer; check playback support. Use H.264 MP4 for direct publishing.':''):'No compatible encoder installed for this format.'):native?'Browser '+$('container').value+' real-time recording available; for smooth fixed-frame export start the local FFmpeg server. Direct publishing is not configured.':$('container').value+' requires the local server with FFmpeg, or choose a format supported by this browser.';
  $('quality').disabled=!bridge||!bridgeInfo.ffmpeg;$('quality').title=bridge?'FFmpeg compression preset':'Browser bitrate is set automatically';
@@ -54,6 +62,7 @@ $('container').onchange=encoderStatus;$('videoCodec').onchange=encoderStatus;
 window.addEventListener('focus',()=>{if(bridge)refreshAccounts()});
 
 async function deliverRender(link,blob){
+ if($('sizeMode').value==='Target size')throw Error('Target size requires the fixed-frame local renderer. Use local FFmpeg export.');
  if(!bridge||!bridgeInfo.ffmpeg){registerRender(link,blob);return}
  const format=$('container').value.toLowerCase(),ratio=currentRatio,codec=$('videoCodec').value;
  $('jobStatus').value='Encoding '+format.toUpperCase()+' · '+$('quality').value;
@@ -105,8 +114,8 @@ function buildPublishControls(box,asset,targets,ratio){
     const job=await api('/api/publish',{method:'POST',body:JSON.stringify(payload)});
     for(;;){
      const result=await api('/api/job/'+job.id);
-     state.textContent=platform+' · '+result.status+(result.error?' · '+result.error:'');
-     if(!['Queued','Uploading','Processing on Instagram'].includes(result.status)){
+     state.textContent=platform+' · '+result.status+(Number.isFinite(result.percent)?' · '+result.percent+'% sent':'')+(result.uploadSeconds!=null?' · Upload '+Math.round(result.uploadSeconds)+'s · Processing '+Math.max(0,Math.round((result.elapsed||0)-result.uploadSeconds))+'s':result.elapsed!=null?' · '+Math.round(result.elapsed)+'s elapsed':'')+(result.error?' · '+result.error:'');
+     if(!['Queued','Uploading','Recovering upload','Processing on YouTube','Processing on Instagram'].includes(result.status)){
       if(result.status==='Failed'&&!result.retryable){completed.add(platform);state.append(' · Check your account before attempting another upload.')}
       if(result.status!=='Failed'){completed.add(platform);if(platform.startsWith('YouTube')&&result.id){const a=el('a','Open video');a.target='_blank';a.rel='noopener';a.href='https://www.youtube.com/watch?v='+encodeURIComponent(result.id);state.append(a)}}
       break

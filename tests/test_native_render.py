@@ -72,3 +72,19 @@ class NativeControlTests(unittest.TestCase):
                 self.assertFalse(job.thread.is_alive());self.assertIsNotNone(job.process.poll())
             finally:
                 if not session.cancelled:session.cancel()
+
+class TargetSizeRenderTests(unittest.TestCase):
+    def test_native_target_size_is_decodable_with_audio(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);session=fixture(root,duration=10,width=640,height=360)
+            session.settings['targetMB']=1
+            job=NativeJob(session,root/'budget.mp4');job.thread.join(60)
+            try:
+                self.assertEqual(job.state,'Complete',(job.snapshot(),(session.root/'ffmpeg.log').read_text()))
+                self.assertLess(job.output.stat().st_size,1500000)
+                self.assertGreater(job.output.stat().st_size,100000)
+                self.assertIn('Rendering',job.snapshot()['timings'])
+                self.assertIn('Finalizing',job.snapshot()['timings'])
+                self.assertIn('Verifying',job.snapshot()['timings'])
+                subprocess.run(['ffmpeg','-v','error','-xerror','-i',str(job.output),'-f','null','-'],check=True,timeout=30)
+            finally:session.cancel()

@@ -1,10 +1,18 @@
-# FrameCast Studio 0.10.0 — Windows local publisher
+# FrameCast Studio 0.12.7 — Windows local publisher
 
 Install Python 3.10 or newer (with the py launcher) and FFmpeg (with libx264, AAC and libvpx-vp9). Open a new terminal after installing. From D:\Framecaststudio run:
     
     py server.py
 
-Open http://localhost:4173. Leave the terminal running. The browser records the timeline in real time, then the loopback service uses FFmpeg to encode it once per ratio. MP4 and MOV use H.264 plus AAC, WebM uses VP9 plus Opus. Small prioritizes smaller files at lower quality. Downloads work without any social credentials. The preview resolution selector sets output dimensions. Export temporary files and sign-in tokens last for this server session. Download the files you want before stopping it.
+Open http://localhost:4173 and leave the terminal running. Local fixed-frame export uses FFmpeg; compatible one-video/title/ticker projects use the faster native route. H.264 MP4 with AAC is the publishing format. Other supported codecs are download options. Export files, upload jobs and account tokens last for this server session: download completed files before stopping the server. A desktop EXE wrapper alone does not add persistence.
+
+Target size is an approximate per-file budget with 128 kbps audio and 3% reserved overhead. It uses single-pass average video bitrate to preserve export speed. Content and hardware rate control affect the actual size; this is not an exact cap. Quality preset retains CRF/CQP quality control and can produce much larger files.
+
+YouTube uploads now use authenticated chunks and query the existing session after transient failures, with bounded retries. An uncertain outcome never automatically starts another upload. After acceptance, the server polls processing status; unavailable/slow processing is reported as pending, not falsely marked published. Shorts are preflighted for square/portrait orientation and a maximum three-minute duration.
+
+Meta uses the existing local video upload endpoints and now exposes bytes sent. It does not yet resume a partially transferred upload. Instagram polls its processing container before publishing. Facebook's finish response is labelled Accepted by Facebook; publication must be confirmed on the Page. Failed/ambiguous uploads are blocked from blind retries during the session to reduce duplicate posts.
+
+No real social account has been connected or posted to in the automated tests. Google/Meta developer registration, OAuth consent, account eligibility, permissions and provider-side processing still require an end-to-end test before commercial release. Restart recovery, encrypted token persistence and durable upload queues remain future work.
 
 ## Register FrameCast once as the developer
 

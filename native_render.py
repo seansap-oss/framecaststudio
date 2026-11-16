@@ -9,6 +9,7 @@ import threading
 import time
 from pathlib import Path
 from offline_render import output_frames, verify_video
+from export_budget import budget, rate_options
 
 
 def number(value, low, high):
@@ -68,14 +69,20 @@ class NativeJob:
     def __init__(self,session,output):
         self.session=session;self.output=Path(output);self.process=None;self.started=time.monotonic()
         self.state='Preparing';self.frame=0;self.error=None;self.encoder=None;self.paused=False
+        self.timings={};self.phase_started=time.monotonic()
         self.thread=threading.Thread(target=self.run,daemon=True);self.thread.start()
 
+    def phase(self, name):
+        now=time.monotonic()
+        self.timings[self.state]=self.timings.get(self.state,0)+now-self.phase_started
+        self.phase_started=now;self.state=name
+
     def snapshot(self):
-        return dict(state=self.state,frames=self.frame,total=self.session.total,encoder=self.encoder,
+        return dict(timings={**self.timings,self.state:self.timings.get(self.state,0)+(0 if self.state in ('Complete','Failed') else time.monotonic()-self.phase_started)},state=self.state,frames=self.frame,total=self.session.total,encoder=self.encoder,
                     stage=self.session.stage,finalSeconds=self.session.final_seconds,error=self.error,elapsed=time.monotonic()-self.started,paused=self.paused)
 
     def pause(self,value):
-        p=self.process
+        p=self.session.mux_process or self.process
         if not p or p.poll() is not None:raise ValueError('Encoder is not running')
         if self.paused==value:return
         if os.name=='nt':
@@ -83,7 +90,7 @@ class NativeJob:
             api.argtypes=[ctypes.c_void_p];api.restype=ctypes.c_long
             if api(ctypes.c_void_p(int(p._handle)))!=0:raise ValueError('Windows could not pause/resume the encoder')
         else:os.kill(p.pid,signal.SIGSTOP if value else signal.SIGCONT)
-        self.paused=value
+        self.paused=value;self.session.paused=value
 
     def run(self):
         s=self.session.settings
@@ -101,11 +108,17 @@ class NativeJob:
             choices=['h264_amf','libx264'] if 'h264_amf' in encoders else ['libx264']
             for encoder in choices:
                 if self.session.cancelled:return
-                self.encoder=encoder;self.frame=0;self.state='Rendering'
+                self.encoder=encoder;self.frame=0;self.phase('Rendering')
                 quality={'High':18,'Balanced':23,'Small':29}[s['quality']]
                 opts=['-c:v',encoder]
                 if encoder=='h264_amf':opts+=['-quality','speed' if s.get('speed')=='Fast' else 'balanced','-rc','cqp','-qp_i',str(quality),'-qp_p',str(quality+2)]
                 else:opts+=['-preset',{'Fast':'veryfast','Balanced':'medium','Quality':'slow'}[s.get('speed','Balanced')],'-crf',str(quality),'-threads',str(min(8,os.cpu_count() or 2))]
+                if budget(s):
+                    if encoder=='h264_amf':
+                        opts=['-c:v',encoder,'-quality','speed' if s.get('speed')=='Fast' else 'balanced']
+                    else:
+                        pos=opts.index('-crf');del opts[pos:pos+2]
+                    opts+=rate_options(s,encoder)
                 cmd=['ffmpeg','-nostdin','-hide_banner','-loglevel','error','-xerror','-y','-ss',str(src_in),'-i',str(source),*extra,
                      '-filter_complex_threads','2','-filter_complex',graph,'-map','[out]','-an',
                      '-frames:v',str(self.session.total),'-r',str(s['fps']),'-fps_mode','cfr',*opts,
@@ -118,9 +131,10 @@ class NativeJob:
                 if rc==0:break
             if self.session.cancelled:self.state='Cancelled';return
             if rc:raise ValueError('Native encoder failed. Download the error report for FFmpeg details.')
-            self.state='Finalizing'
+            self.phase('Finalizing')
             self.session.mux(self.output)
+            self.phase('Verifying')
             actual=verify_video(self.output,self.session.total)
-            self.frame=actual;self.state='Complete'
+            self.frame=actual;self.phase('Complete')
         except Exception as error:
-            self.error=str(error);self.state='Failed'
+            self.error=str(error);self.phase('Failed')

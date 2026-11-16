@@ -89,11 +89,14 @@ render=async function(){
    const r=await fetch('/api/render/native-status/'+id,{signal:fixedRequest.signal});result=await r.json();if(!r.ok)throw Error(result.error||'Cannot read export progress');
    if(result.state==='Failed')throw Error(result.error);if(result.state==='Complete')break;
    if(result.state==='Rendering'&&!fixedPaused)exportClock.update(result.frames,result.total);
-   if(result.state==='Finalizing')exportClock.state='Finalizing';
+   if(['Finalizing','Verifying'].includes(result.state))exportClock.state='Finalizing';
+   let stages=$('exportStages');if(!stages){stages=el('p');stages.id='exportStages';stages.className='helpText';$('jobStatus').after(stages)}
+   stages.textContent=Object.entries(result.timings||{}).map(([name,seconds])=>name+': '+Math.round(seconds)+'s').join(' · ');
    const percent=Math.min(99,Math.floor(result.frames/result.total*95));$('progress').value=percent;
    $('jobStatus').value=(fixedPaused?'Paused':result.state==='Finalizing'?(result.stage||'Finalizing')+' · '+Math.floor(result.finalSeconds||0)+'s processed':'Native '+result.state.toLowerCase())+' · '+percent+'% · '+(result.encoder||'preparing');
    await new Promise(resolve=>setTimeout(resolve,500));
   }
+  if($('exportStages'))$('exportStages').textContent=Object.entries(result.timings||{}).filter(([name])=>name!=='Complete').map(([name,seconds])=>name+': '+Math.round(seconds)+'s').join(' · ');
   fixedResult(result,settings);ok=true;$('jobStatus').value='Verified '+result.frames+' frames · '+result.encoder+' · download ready';notify('Native ticker export finished');
  }catch(e){reason=fixedCancel?'Render cancelled':'Render failed · '+e.message;notify(reason);if(!fixedCancel)await renderDiagnostics(id,reason)}
  finally{

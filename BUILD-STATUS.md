@@ -1,3 +1,13 @@
+# v0.12.7 — predictable size controls and safer publishing
+
+New target-size control for local H.264 export: decimal MB budget, 128 kbps audio, overhead allowance, average bitrate for libx264 or AMD AMF. Quality presets remain available. Impossible budgets are rejected before encoding; single-pass size is approximate, not guaranteed.
+
+YouTube now sends authentication on upload PUTs, uses chunked resumable transfer, reconciles provider offsets after transient failures and avoids starting another session when a final response is lost. Processing status is checked separately. A pending status check never erases an accepted video ID. Shorts duration/orientation and title are validated. Meta transfers expose bytes sent, but interrupted Meta transfers do not yet resume.
+
+Native stage timings (preparation/render/finalization/verification), finalization pause support and upload elapsed/progress reporting are added. Session-level duplicate prevention remains conservative on uncertain failures.
+
+Validation: 25 JavaScript tests and 38 Python tests passed across the full suite and focused follow-ups. Includes an actual target-size FFmpeg video/audio export and full output decode; mocked upload interruption, lost final response, processing rejection, no-progress limits and file-budget validation. Build passed. Windows AMD target-bitrate behaviour and real Google/Meta sign-in/uploads are NOT verified here. No performance or size parity claim against Adobe/DaVinci, no 100% reliability guarantee. This is a local single-user development release, not a verified commercial publishing service.
+
 # v0.12.6 — bounded finalization and faster structural verification
 
 Validation: 25 JavaScript tests, 22 existing Python tests and two new finalization tests passed. Build passed. No new long-video or Windows benchmark was performed.

@@ -1,3 +1,4 @@
+from export_budget import budget, rate_options
 """Fixed-frame local renderer. Frames arrive in timeline order; FFmpeg never watches the UI clock."""
 import json
 import math
@@ -154,7 +155,7 @@ class VideoFrameSource:
                 timer.cancel()
 
 
-def video_options(fmt, preset, codec, encoder, speed='Balanced'):
+def video_options(fmt, preset, codec, encoder, speed='Balanced', settings=None):
     quality = {'h264': (29, 23, 18), 'hevc': (30, 25, 20), 'av1': (38, 30, 24), 'vp9': (38, 32, 26)}[codec][('Small', 'Balanced', 'High').index(preset)]
     args = ['-c:v', encoder, '-crf', str(quality), '-pix_fmt', 'yuv420p', '-threads', '2']
     if speed not in ('Fast','Balanced','Quality'):raise ValueError('Invalid encoding speed')
@@ -163,6 +164,9 @@ def video_options(fmt, preset, codec, encoder, speed='Balanced'):
     elif encoder == 'libsvtav1': args += ['-preset', {'Fast':'10','Balanced':'8','Quality':'6'}[speed], '-svtav1-params', 'lp=2']
     elif codec == 'av1': args += ['-b:v', '0', '-cpu-used', {'Fast':'8','Balanced':'6','Quality':'4'}[speed]]
     else: args += ['-b:v', '0', '-deadline', 'good', '-cpu-used', {'Fast':'6','Balanced':'4','Quality':'2'}[speed]]
+    if settings and budget(settings):
+        pos=args.index('-crf');del args[pos:pos+2]
+        args += rate_options(settings, encoder)
     return args
 
 
@@ -180,6 +184,7 @@ class FixedFrameRender:
         self.mux_process = None
         self.lock = threading.Lock()
         self.cancelled = False
+        self.paused = False
         self.stage = "Preparing"
         self.final_seconds = 0
         # MP4 preserves the encoder time base; millisecond-rounded MKV timestamps
@@ -216,7 +221,7 @@ class FixedFrameRender:
         s = self.settings
         cmd = ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
                '-f', 'image2pipe', '-framerate', str(s['fps']), '-vcodec', 'png', '-i', 'pipe:0',
-               '-an', *video_options(s['format'], s['quality'], s['codec'], self.encoder,s.get('speed','Balanced')), str(self.silent)]
+               '-an', *video_options(s['format'], s['quality'], s['codec'], self.encoder,s.get('speed','Balanced'),s), str(self.silent)]
         self.process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=self.log)
 
     def frames(self, stream, size):
@@ -311,7 +316,7 @@ class FixedFrameRender:
         else:
             cmd += ['-f', 'lavfi', '-t', str(duration), '-i', 'anullsrc=r=48000:cl=stereo', '-map', '0:v:0', '-map', '1:a:0']
         cmd += ['-c:v', 'copy', '-c:a', 'libopus' if s['format'] == 'webm' else 'aac',
-                '-ar', '48000', '-b:a', '192k']
+                '-ar', '48000', '-b:a', str(budget(s)[1]) if budget(s) else '192k']
         if s['format'] != 'webm': cmd += ['-movflags', '+faststart']
         progress = self.root / 'finalize-progress.txt'
         cmd += ['-progress',str(progress),'-nostats',str(output)]
@@ -330,6 +335,7 @@ class FixedFrameRender:
                 if line.startswith('out_time_us='):
                     try: self.final_seconds = int(line.split('=')[1]) / 1e6
                     except ValueError: pass
+            if self.paused: changed=time.monotonic()
             if time.monotonic() - changed > 120:
                 self.mux_process.kill(); self.mux_process.wait()
                 raise ValueError('Audio/file finalization made no progress for 120 seconds. Download the render error report.')

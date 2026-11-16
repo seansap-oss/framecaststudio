@@ -11,7 +11,7 @@ function paintExportClock(){if(!exportClock)return;const s=exportClock.status();
 function startExportClock(){clearInterval(exportClockTimer);exportClock=new FrameCastRenderClock();paintExportClock();exportClockTimer=setInterval(paintExportClock,1000)}
 function endExportClock(ok){exportClock?.end(ok);clearInterval(exportClockTimer);paintExportClock()}
 async function renderDiagnostics(id,reason){
- let details={error:reason,version:'0.12.6'};
+ let details={error:reason,version:'0.12.7'};
  if(id)try{const r=await fetch('/api/render/diagnostics/'+id);if(r.ok)details={...details,...await r.json()}}catch{}
  const link=el('a','Download render error report');link.href=URL.createObjectURL(new Blob([JSON.stringify(details,null,2)],{type:'application/json'}));link.download='FrameCast-render-error.json';$('results').append(link);
 }
@@ -32,7 +32,8 @@ function renderVisualSources(){
 }
 function fixedSettings(){
  const start=renderStart,end=renderEnd??total();
- return {start,end,fps:+$('exportFps').value,format:$('container').value.toLowerCase(),
+ const targetMB=$('sizeMode')?.value==='Target size'?Number($('targetMB').value):null;
+ return {targetMB,start,end,fps:+$('exportFps').value,format:$('container').value.toLowerCase(),
   quality:$('quality').value,speed:$('encodingSpeed').value,codec:$('videoCodec').value,audio:renderAudioSources().map(({url,...rest})=>rest),
   visual:renderVisualSources().map(({id})=>({id})),
   clip:+$('Clip').value,bed:+$('Bed').value,master:+$('Master').value,
