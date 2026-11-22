@@ -17,21 +17,13 @@ $('zoomIn').onclick=()=>zoomTimeline(timelineZoom+1);$('zoomOut').onclick=()=>zo
 function clearSnap(){document.querySelectorAll('.snapLine').forEach(n=>n.remove());$('snapStatus').value='30 fps'}
 function snapRange(key,state,mode,span,width,bypass){
  clearSnap();
- const frame=1/30;
- if(mode==='move')state.start=Math.max(0,Math.round(state.start/frame)*frame);
- if(!$('snapEnabled').checked||bypass||mode==='slip')return state;
  const targets=[0,time,...Object.entries(layers).filter(([k,l])=>k!==key&&!l.removed).flatMap(([,l])=>[l.start,l.end||total()])];
- const edges=mode==='left'?[state.start]:mode==='right'?[state.start+state.duration]:[state.start,state.start+state.duration];
- let best=null;
- for(const edge of edges)for(const target of targets){const delta=target-edge;if(Math.abs(delta)<=span/width*9&&(!best||Math.abs(delta)<Math.abs(best.delta)))best={delta,target}}
- if(!best)return state;
- const next={...state};
- if(mode==='move')next.start+=best.delta;
- if(mode==='right')next.duration+=best.delta;
- if(mode==='left'){next.start+=best.delta;next.duration-=best.delta;next.source+=best.delta}
- if(next.start<0||next.source<0||next.duration<MIN_LENGTH||next.source+next.duration>(assets[key]?.duration||Infinity)+.001)return state;
- for(const lane of $('tracks').querySelectorAll('.lane')){const guide=el('span');guide.className='snapLine';guide.style.left=best.target/span*100+'%';lane.append(guide)}
- $('snapStatus').value='SNAP '+frameTime(best.target);return next;
+ const {state:next,target}=FrameCastCore.snap(state,mode,targets,span/Math.max(1,width)*9,clipLimits(key,layers[key]),$('snapEnabled').checked&&!bypass);
+ if(target!==null){
+  for(const lane of $('tracks').querySelectorAll('.lane')){const guide=el('span');guide.className='snapLine';guide.style.left=target/span*100+'%';lane.append(guide)}
+  $('snapStatus').value='SNAP '+frameTime(target);
+ }
+ return next;
 }
 
 // Per-layer processing is shared by preview and the recorded canvas.
@@ -75,7 +67,7 @@ function processedAsset(asset,g){
  const sw=asset.videoWidth||asset.naturalWidth,sh=asset.videoHeight||asset.naturalHeight;if(!sw||!sh)return asset;
  const scale=Math.min(1,Math.max(monitor.width,monitor.height)/Math.max(sw,sh)),w=Math.max(1,Math.round(sw*scale)),h=Math.max(1,Math.round(sh*scale));
  const canvas=cached?.canvas||document.createElement('canvas');
- canvas.width=w;canvas.height=h;const c=canvas.getContext('2d',{willReadFrequently:true});c.drawImage(asset,0,0);
+ canvas.width=w;canvas.height=h;const c=canvas.getContext('2d',{willReadFrequently:true});c.drawImage(asset,0,0,w,h);
  const pixels=c.getImageData(0,0,w,h),d=pixels.data;
  for(let i=0;i<d.length;i+=4){const rgb=gradePixel([d[i]/255,d[i+1]/255,d[i+2]/255],g);d[i]=rgb[0]*255;d[i+1]=rgb[1]*255;d[i+2]=rgb[2]*255}
  c.putImageData(pixels,0,0);canvas.naturalWidth=w;canvas.naturalHeight=h;canvas.readyState=4;
@@ -85,7 +77,7 @@ function graphic(key,l){
  const g=l.grade,asset=assets[key];
  if(!g||($('gradeBefore').checked&&key===selectedLayer&&!busy)){graphicRaw(key,l);return}
  const grade={...gradeDefaults,...g};ctx.save();ctx.filter='saturate('+(1+grade.saturation/100)+') hue-rotate('+grade.hue+'deg)';
- const eligible=asset&&['VIDEO','IMG'].includes(asset.tagName)&&(asset.tagName!=='VIDEO'||asset.readyState>=2);
+ const eligible=asset&&['VIDEO','IMG','CANVAS'].includes(asset.tagName)&&(asset.tagName!=='VIDEO'||asset.readyState>=2);
  try{
   if(eligible){const result=processedAsset(asset,grade);assets[key]=result;graphicRaw(key,l)}
   else graphicRaw(key,l);
@@ -104,17 +96,24 @@ $('saveProject').onclick=async()=>{
    const blob=await(await fetch(asset.src)).blob();
    media[key]=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve({kind:asset.tagName.toLowerCase(),url:reader.result});reader.onerror=reject;reader.readAsDataURL(blob)});
   }
-  downloadBlob(new Blob([JSON.stringify({version:9,layers,media,transitions:[...transitions],framing,ratio:currentRatio})],{type:'application/json'}),'FrameCast-project.json');notify('Project saved with embedded media')
+  const settings=typeof takeHistory==='function'?takeHistory().data.settings:{};
+  const backdrop=background?await new Promise(async(resolve,reject)=>{try{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(await(await fetch(background.src)).blob())}catch(e){reject(e)}}):null;
+  downloadBlob(new Blob([JSON.stringify({version:10,layers,media,transitions:[...transitions],framing,ratio:currentRatio,title:$('postTitle').value,settings,background:backdrop,exportRanges:[...ranges]})],{type:'application/json'}),'FrameCast-project.json');notify('Project saved with embedded media')
  }catch(e){notify('Save failed · '+e.message)}
 };
 $('loadProject').onclick=()=>$('projectFile').click();
 $('projectFile').onchange=async e=>{
  try{
-  const file=e.target.files[0];if(!file)return;const data=JSON.parse(await file.text());if(data.version!==9||!data.layers||!data.media)throw Error('Choose a FrameCast v0.9 project');
+  const file=e.target.files[0];if(!file)return;const data=JSON.parse(await file.text());if(![9,10].includes(data.version)||!data.layers||!data.media)throw Error('Choose a FrameCast v0.9 or v0.10 project');
   const media={};for(const [key,item] of Object.entries(data.media)){if(!['video','audio','img'].includes(item.kind)||!item.url.startsWith('data:'))throw Error('Invalid media');media[key]=item.kind==='img'?await loadImage(item.url):await loadMedia(item.url,item.kind)}
-  stop();for(const key of Object.keys(layers)){discard(key)}Object.assign(layers,data.layers);Object.assign(assets,media);
+  if(data.background&&!data.background.startsWith('data:image/'))throw Error('Invalid background image');
+  const backdrop=data.background?await loadImage(data.background):null;
+  if(typeof commitHistory==='function')commitHistory();
+  stop();for(const key of Object.keys(layers)){discard(key)}Object.assign(layers,data.layers);Object.assign(assets,media);background=backdrop;
+  for(const [id,value] of Object.entries(data.settings||{})){if(typeof mixerIds==='undefined'||!mixerIds.includes(id))continue;if($(id).type==='checkbox')$(id).checked=!!value;else $(id).value=value;}
+  if(data.title){$('postTitle').value=data.title;$('renameProject').textContent=data.title+' ▾';}
   serial=Math.max(0,...Object.keys(layers).map(k=>Number(k.replace('insert-',''))||0));transitions.clear();for(const [key,value] of data.transitions||[])transitions.set(key,value);
-  framing=data.framing||{};currentRatio=data.ratio||'16:9';$('ratio').value=currentRatio;demo=false;rebuildOptions(Object.keys(layers)[0]);chooseLayer(Object.keys(layers)[0]);timeline();dimensions();seek(0);notify('Project opened')
+  framing=data.framing||{};currentRatio=data.ratio||'16:9';$('ratio').value=currentRatio;demo=false;rebuildOptions(Object.keys(layers)[0]);chooseLayer(Object.keys(layers)[0]);timeline();dimensions();seek(0);ranges.splice(0,ranges.length,...(data.exportRanges||[]).filter(r=>Number.isFinite(r.start)&&Number.isFinite(r.end)&&r.end>r.start));rangeSerial=Math.max(0,...ranges.map(r=>r.id||0));selectedRange='all';paintRanges();if(audio){connectInserts();levels();refreshCleanup()}if(typeof commitHistory==='function')commitHistory();notify('Project opened')
  }catch(error){notify('Open failed · '+error.message)}finally{e.target.value=''}
 };
 $('pngExport').onclick=()=>{
@@ -145,8 +144,8 @@ async function addLiveSource(media,name,stream){
 function renderLiveSources(){
  $('liveSources').replaceChildren();$('liveMixer').replaceChildren();
  for(const src of liveSources){
-  const row=el('div');row.className='liveSource';const name=el('button',src.name);name.onclick=()=>{nextScene.ids=[src.id,...nextScene.ids.filter(id=>id!==src.id)].slice(0,2)};
-  const remove=el('button','Remove');remove.onclick=()=>{if(liveRecorder?.state==='recording')return notify('Stop recording before removing a source');src.stream?.getTracks().forEach(t=>t.stop());src.media.pause();src.gain.disconnect();if(src.media.src.startsWith('blob:'))URL.revokeObjectURL(src.media.src);liveSources=liveSources.filter(s=>s!==src);nextScene.ids=nextScene.ids.filter(k=>k!==src.id);onAirScene.ids=onAirScene.ids.filter(k=>k!==src.id);renderLiveSources()};
+  const row=el('div');row.className='liveSource';const name=el('button',src.name);name.onclick=()=>{nextScene.ids=[src.id,...nextScene.ids.filter(id=>id!==src.id)].slice(0,2);renderLiveSources()};
+  const remove=el('button','Remove');remove.onclick=()=>{if(liveRecorder?.state==='recording')return notify('Stop recording before removing a source');src.stream?.getTracks().forEach(t=>t.stop());src.media.pause();src.gain.disconnect();if(!src.projectKey&&src.media.src.startsWith('blob:'))URL.revokeObjectURL(src.media.src);liveSources=liveSources.filter(s=>s!==src);nextScene.ids=nextScene.ids.filter(k=>k!==src.id);onAirScene.ids=onAirScene.ids.filter(k=>k!==src.id);renderLiveSources()};
   const thumb=el('canvas');thumb.width=240;thumb.height=135;
   if(src.media.readyState>=2)thumb.getContext('2d').drawImage(src.media,0,0,240,135);
   row.append(thumb,name,remove);$('liveSources').append(row);
@@ -180,7 +179,8 @@ function paintLive(){
  const now=performance.now(),delta=liveClock?now-liveClock:0;liveClock=now;
  const fade=clamp((now-fadeStart)/(Math.max(.001,+$('liveFade').value)*1000),0,1);
  for(const s of liveSources){
-  const active=onAirScene.ids.includes(s.id)?(previousScene&&!previousScene.ids.includes(s.id)?fade:1):(previousScene?.ids.includes(s.id)?1-fade:0);
+  const audible=scene=>scene&&(scene.layout==='Solo'?scene.ids.slice(0,1):scene.ids).includes(s.id);
+  const active=audible(onAirScene)?(previousScene&&!audible(previousScene)?fade:1):(audible(previousScene)?1-fade:0);
   s.gain.gain.value=active*s.volume/100;
  }
  const preview=$('livePreview').getContext('2d'),program=$('liveProgram').getContext('2d');

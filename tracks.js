@@ -14,7 +14,7 @@ function clearSamples(){
 function addProgram(media,name,at,sample=false){
  const id=newLayer('video',name,at,media.duration,media);
  Object.assign(layers[id],{x:0,y:0,w:100,h:100,program:true,sample});
- if(sample)placeUnderTitles(id);
+ placeUnderTitles(id);
  rebuildOptions(id);inspect();timeline();return id;
 }
 function addBed(media,name,at,sample=false){
@@ -22,6 +22,7 @@ function addBed(media,name,at,sample=false){
  Object.assign(layers[id],{bus:'bed',sample});return id;
 }
 async function addFiles(files,kind){
+ if(typeof commitHistory==='function')commitHistory();
  const context=insertion;insertion=null;
  let start=context?.at??time;stop();
  for(const f of files){
@@ -39,6 +40,7 @@ async function addFiles(files,kind){
    connectInserts();timeline();const l=layers[id];seek(l.start);chooseLayer(id);notify('Added '+f.name);
   }catch(e){URL.revokeObjectURL(url);notify(f.name+' · '+e.message)}
  }
+ if(typeof commitHistory==='function')commitHistory();
 }
 for(const [id,kind] of [['videos','program'],['sounds','bed'],['inserts','insert']]){
  const input=$(id);input.multiple=true;
@@ -47,12 +49,13 @@ for(const [id,kind] of [['videos','program'],['sounds','bed'],['inserts','insert
 sequence.ondrop=async e=>{
  e.preventDefault();sequence.classList.remove('drop');if(busy)return;
  const lane=e.target.closest('.lane'),r=lane?.getBoundingClientRect();
- insertion={at:r?clamp((e.clientX-r.left)/r.width*timelineSpan(),0,timelineSpan()):time};
+ insertion={at:r?clamp((e.clientX-r.left)/r.width*timelineSpan(),0,timelineSpan()):time,near:lane?.parentElement.dataset.key,above:true};
  await addFiles(Array.from(e.dataTransfer.files),'insert');
 };
 function deleteTrack(id){
  if(!id||!layers[id])return;
  stop();
+ for(const [to,tr] of transitions)if(to===id||tr.from===id)transitions.delete(to);
  if(id.startsWith('insert-'))discard(id);
  else {layers[id].removed=true;layers[id].visible=false;assets[id]?.pause?.()}
  selectedLayer=null;
@@ -75,7 +78,7 @@ function decorateHeader(label,id){
  name.onclick=()=>{stop();chooseLayer(id)};name.ondblclick=()=>renameTrack(id);
  const actions=el('button','⋯');actions.className='trackMore';actions.title='Track actions';actions.onclick=()=>{const r=actions.getBoundingClientRect();showTrackMenu(id,time,r.left,r.bottom)};label.append(actions);
 }
-function autoScrollRows(y){const r=sequence.getBoundingClientRect();if(y>r.bottom-30)sequence.scrollTop+=12;if(y<r.top+65)sequence.scrollTop-=12}
+function autoScrollRows(y){const r=scrollTime.getBoundingClientRect();if(y>r.bottom-36)scrollTime.scrollTop+=14;if(y<r.top+50)scrollTime.scrollTop-=14}
 function changeOrder(id,direction){
  const visible=Object.keys(layers).filter(k=>!layers[k].removed&&(layers[k].text||assets[k]||layers[k].kind));
  const at=visible.indexOf(id);const other=direction==='top'?visible.at(-1):direction==='bottom'?visible[0]:visible[at+(direction==='up'?1:-1)];
@@ -130,4 +133,4 @@ function bindScrubber(ruler,span){
  ruler.onclick=null;ruler.onpointerdown=e=>{if(e.button!==0||busy)return;e.preventDefault();stop();ruler.setPointerCapture(e.pointerId);scrub(e);ruler.onpointermove=scrub;ruler.onpointerup=ruler.onpointercancel=()=>ruler.onpointermove=null};
  thumb.onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();stop();seek(time+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?1:.04))}};
 }
-init();
+init().then(()=>{if(typeof editorReady==='function')editorReady()});

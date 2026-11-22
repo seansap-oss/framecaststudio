@@ -64,22 +64,23 @@ function refreshAudioLanes(){
 }
 function attachClipControls(lane,key,span){
  const l=layers[key],tr=transitionRange(key);
- if(tr){const strip=el('button',tr.effect+' · '+tr.duration.toFixed(2)+'s');strip.className='transitionStrip';strip.style.left=100*tr.start/span+'%';strip.style.width=100*tr.duration/span+'%';strip.title=strip.textContent+' · click to edit or drag right edge to trim';lane.append(strip);
+ if(tr){const strip=el('button',tr.effect+' · '+tr.duration.toFixed(2)+'s');strip.className='transitionStrip';strip.style.left=100*tr.start/span+'%';strip.style.width=100*tr.duration/span+'%';strip.title=(layers[tr.from].name||tr.from)+' → '+(l.name||key)+' · '+strip.textContent+' · click to edit or drag right edge to trim';lane.append(strip);
   strip.onclick=()=>editTransition(key);
   const edge=el('span');edge.className='edge right';strip.append(edge);
   edge.onpointerdown=e=>{e.preventDefault();e.stopPropagation();const x=e.clientX,old=tr.duration;edge.setPointerCapture(e.pointerId);
-   edge.onpointermove=ev=>{const available=Math.min(l.end,layers[tr.from].end)-tr.start;transitions.get(key).duration=clamp(old+(ev.clientX-x)*span/lane.clientWidth,.04,available);strip.style.width=100*transitions.get(key).duration/span+'%'};
+   edge.onpointermove=ev=>{const available=Math.min(l.end,layers[tr.from].end)-tr.start;transitions.get(key).duration=clamp(old+(ev.clientX-x)*span/lane.clientWidth,1/30,available);strip.style.width=100*transitions.get(key).duration/span+'%'};
    edge.onpointerup=edge.onpointercancel=()=>{edge.onpointermove=null;timeline();editTransition(key)}};
  }
- if(l.kind==='video'){
+ if(['video','image'].includes(l.kind)){
   lane.addEventListener('dragover',e=>{if(e.dataTransfer.types.includes('application/framecast-effect')){e.preventDefault();e.stopPropagation();lane.classList.add('effectTarget')}});
   lane.addEventListener('dragleave',()=>lane.classList.remove('effectTarget'));
   lane.addEventListener('drop',e=>{
    const effect=e.dataTransfer.getData('application/framecast-effect');if(!effects.includes(effect))return;
    e.preventDefault();e.stopPropagation();lane.classList.remove('effectTarget');sequence.classList.remove('drop');openPanel('Transitions');
    $('transitionTo').value=key;$('effectName').value=effect;
-   const prior=Object.keys(layers).filter(k=>k!==key&&layers[k].kind==='video'&&layers[k].start<=l.start).sort((a,b)=>Math.abs(layers[a].end-l.start)-Math.abs(layers[b].end-l.start))[0];
-   if(prior)$('transitionFrom').value=prior;
+   const prior=transitionPredecessor(key);
+   if(!prior)return notify('Add another video or image for this transition');
+   $('transitionFrom').value=prior;
    applyTransition(false,true);
   });
  }
@@ -102,10 +103,10 @@ inspector.insertAdjacentHTML('beforeend',row('Clip level (%)',number('numericGai
 $('numericGain').onchange=()=>{if(layers[selectedLayer])setClipVolume(selectedLayer,clamp(+$('numericGain').value,0,100))};
 
 const editor=$('transitionEditor');
-editor.innerHTML=row('From clip','<select id="transitionFrom"></select>')+row('To clip','<select id="transitionTo"></select>')+row('Effect',select('effectName',effects))+row('Duration (s)',number('effectDuration',.04,600,.05))+row('Crossfade clip audio',check('effectAudio'))+'<div class="actions"><button id="tryEffect">Preview</button><button id="applyEffect">Apply</button><button id="removeEffect">Remove</button></div><output id="effectStatus"></output>';
+editor.innerHTML=row('From clip','<select id="transitionFrom"></select>')+row('To clip','<select id="transitionTo"></select>')+row('Effect',select('effectName',effects))+row('Duration (s)',number('effectDuration',1/30,600,1/30))+row('Crossfade clip audio',check('effectAudio'))+'<div class="actions"><button id="tryEffect">Preview</button><button id="applyEffect">Apply</button><button id="removeEffect">Remove</button></div><output id="effectStatus"></output>';
 $('effectDuration').value=1;
 function updateTransitionLists(){
- for(const id of ['transitionFrom','transitionTo']){const s=$(id),old=s.value;s.replaceChildren(...Object.entries(layers).filter(([k,l])=>l.kind==='video'&&!l.removed).map(([k,l])=>named(k,l.name)));if([...s.options].some(o=>o.value===old))s.value=old;else if(id==='transitionTo'&&s.length>1)s.selectedIndex=1}
+ for(const id of ['transitionFrom','transitionTo']){const s=$(id),old=s.value;s.replaceChildren(...Object.entries(layers).filter(([k,l])=>['video','image'].includes(l.kind)&&!l.removed).map(([k,l])=>named(k,l.name)));if([...s.options].some(o=>o.value===old))s.value=old;else if(id==='transitionTo'&&s.length>1)s.selectedIndex=1}
  $('numericGain').closest('label').hidden=!['video','audio'].includes(layers[selectedLayer]?.kind);
  refreshAudioLanes()
 }
@@ -116,19 +117,14 @@ function editTransition(to){
 $('transitionTo').onchange=()=>editTransition($('transitionTo').value);
 function applyTransition(preview,fromDrop=false){
  const from=$('transitionFrom').value,to=$('transitionTo').value,a=layers[from],b=layers[to],duration=$('effectDuration').valueAsNumber;
- const status=$('effectStatus');if(!a||!b||a===b){status.value='Choose two different video clips.';return}
- if(!Number.isFinite(duration)||duration<.04||duration>Math.min(a.end-a.start,b.end-b.start)){status.value='Duration must fit inside both clips.';return}
+ const status=$('effectStatus');if(busy)return;if(!a||!b||a===b){status.value='Choose two different video clips.';return}
+ if(!Number.isFinite(duration)||duration<1/30||duration>Math.min(a.end-a.start,b.end-b.start)){status.value='Duration must fit inside both clips.';return}
  if(previewUndo)endTransitionPreview();
  const previous={start:b.start,end:b.end,keys:Object.keys(layers),effect:transitions.get(to),time};
- const overlap=Math.min(a.end,b.end)-Math.max(a.start,b.start);
- if(overlap<duration-.00001){
-  const next=a.end-duration;
-  if(!preview&&!fromDrop&&!confirm('Move '+b.name+' to '+next.toFixed(2)+' s to create a '+duration+' s overlap?'))return;
-  const len=b.end-b.start;b.start=next;b.end=next+len;
- }
+ try{const plan=FrameCastCore.transition(a,b,duration);b.start=plan.start;b.end=plan.end}catch(e){status.value=e.message;notify(e.message);return}
  if(Object.keys(layers).indexOf(to)<Object.keys(layers).indexOf(from))orderAt(to,from,true);
  transitions.set(to,{from,duration,effect:$('effectName').value,audio:$('effectAudio').checked});
- const tr=transitionRange(to);$('effectDuration').value=tr.duration;stop();seek(tr.start);timeline();status.value='Applied · '+a.name+' → '+b.name;
+ const tr=transitionRange(to);$('effectDuration').value=tr.duration;stop();seek(tr.start);timeline();status.value='Applied · '+a.name+' → '+b.name+' · '+tr.duration.toFixed(2)+' s';notify(status.value);if(typeof commitHistory==='function'&&!preview)commitHistory();
  if(preview){
   previewUndo=()=>{b.start=previous.start;b.end=previous.end;applyOrder(previous.keys.filter(k=>layers[k]).concat(Object.keys(layers).filter(k=>!previous.keys.includes(k))));if(previous.effect)transitions.set(to,previous.effect);else transitions.delete(to);seek(previous.time);timeline();status.value='Preview finished · Apply to keep this transition.'};
   previewEnd=tr.start+tr.duration;run().catch(e=>{endTransitionPreview();notify(e.message)});
@@ -165,6 +161,12 @@ function drawTransitionLayer(key,l){
  graphic(key,opacity===1?l:{...l,opacity:l.opacity*opacity});ctx.restore()
 }
 
+function transitionPredecessor(to){
+ const b=layers[to];if(!b)return null;
+ const candidates=Object.keys(layers).filter(k=>k!==to&&!layers[k].removed&&['video','image'].includes(layers[k].kind));
+ const earlier=candidates.filter(k=>layers[k].start<=b.start);
+ return (earlier.length?earlier:candidates).sort((a,c)=>Math.abs(layers[a].end-b.start)-Math.abs(layers[c].end-b.start))[0]||null;
+}
 const gallery=el('details');gallery.innerHTML='<summary>Transition presets · 15</summary>';const choices=el('div');choices.className='effectChoices';
-for(const name of effects){const b=el('button',name);b.draggable=true;b.title='Drag onto the incoming clip or click to select';b.onclick=()=>{$('effectName').value=name};b.ondragstart=e=>{e.dataTransfer.setData('application/framecast-effect',name);e.dataTransfer.effectAllowed='copy'};choices.append(b)}
+for(const name of effects){const b=el('button',name);b.draggable=true;b.title='Drag onto the incoming clip or click to select';b.onclick=()=>{$('effectName').value=name;for(const choice of choices.children)choice.classList.toggle('selectedEffect',choice===b)};b.ondragstart=e=>{e.dataTransfer.setData('application/framecast-effect',name);e.dataTransfer.effectAllowed='copy'};choices.append(b)}
 gallery.append(choices);editor.prepend(gallery);

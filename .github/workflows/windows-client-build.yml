@@ -1,0 +1,49 @@
+name: Windows client build
+
+on:
+  push:
+    branches: [windows-client-v0.12.15]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Windows build tools
+        shell: pwsh
+        run: |
+          choco install ffmpeg innosetup -y --no-progress
+          py -3 -m pip install pyinstaller pillow
+      - name: Verify source
+        shell: pwsh
+        run: |
+          npm test
+          py -3 -m unittest discover -s tests -p test_native_render.py
+          py -3 -m unittest discover -s tests -p test_server.py
+          py -3 -m unittest discover -s tests -p test_upload_transport.py
+          py -3 -m unittest discover -s tests -p test_licensing.py
+          npm run build
+      - name: Build serial-locked customer EXE
+        shell: pwsh
+        run: |
+          Copy-Item license-server.example.json license-server.json
+          ./BUILD-EXE.ps1
+          if (-not (Test-Path dist/PoknaphamEditingSuite/PoknaphamEditingSuite.exe)) { throw 'Missing EXE' }
+      - name: Upload client build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Poknapham-Client-v0.12.15-Windows
+          path: |
+            installer/PoknaphamEditingSuite-Setup-v0.12.15.exe
+            dist/PoknaphamEditingSuite/**
+          if-no-files-found: error
+          retention-days: 30

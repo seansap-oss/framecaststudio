@@ -5,7 +5,7 @@ const check = id => '<input type="checkbox" id="'+id+'">';
 const presenter={x:0,y:0,w:100,h:100,crop:false};
 let serial=0,monitorGain,notches=[],hiss,compressor,cleanupInput;
 const extraId=()=> 'insert-'+(++serial);
-const onAir=l=>l.visible&&time>=l.start&&(!l.end||time<l.end);
+const onAir=l=>!l.removed&&l.visible&&time>=l.start&&(!l.end||time<l.end);
 function baseBox(){
  const split=Object.values(layers).some(l=>l.layout==='Split 50:50'&&onAir(l));
  return split?{x:0,y:0,w:50,h:100,crop:true}:presenter;
@@ -17,7 +17,7 @@ function paintAsset(asset,w,h,crop){
  const scale=crop?Math.max(w/sw,h/sh):Math.min(w/sw,h/sh);
  ctx.drawImage(asset,(w-sw*scale)/2,(h-sh*scale)/2,sw*scale,sh*scale);
 }
-function openPanel(name){const p=panels[name];p.hidden=false;p.classList.remove('fold');p.scrollIntoView({block:'nearest'})}
+function openPanel(name){const p=panels[name];p.hidden=false;p.classList.remove('fold');if(typeof activateDockTab==='function')activateDockTab(name);else p.scrollIntoView({block:'nearest'})}
 extensionPanel('Graphics',row('Layer name','<input id="layerName">')+row('Layout',select('fitLayout',['Free','Inset','Split 50:50']))+row('Crop to box',check('cropLayer'))+row('Mute insert',check('muteInsert'))+row('Insert level',range('insertLevel',0,100,85))+'<div class="actions"><button id="backward">Lower layer</button><button id="forward">Raise layer</button><button id="removeLayer">Remove insert</button></div>');
 function inspectExtra(){
  const l=current();if(!l)return;
@@ -44,7 +44,7 @@ function shiftLayer(step){
  [keys[at],keys[target]]=[keys[target],keys[at]];const sorted=keys.map(k=>[k,layers[k]]);keys.forEach(k=>delete layers[k]);Object.assign(layers,Object.fromEntries(sorted));rebuildOptions(id);timeline();
 }
 $('backward').onclick=()=>shiftLayer(-1);$('forward').onclick=()=>shiftLayer(1);
-function discard(id){const a=assets[id];a?.pause?.();a?.insertGain?.disconnect();if(a?.src.startsWith('blob:')&&!Object.entries(assets).some(([other,m])=>other!==id&&m.src===a.src))URL.revokeObjectURL(a.src);delete layers[id];delete assets[id]}
+function discard(id){const a=assets[id];a?.pause?.();a?.insertGain&&(a.insertGain.gain.value=0);delete layers[id];delete assets[id]}
 $('removeLayer').onclick=()=>{const id=$('layer').value;deleteTrack(id)};
 function newLayer(kind,name,start,duration,asset){
  const key=extraId(),l=initial(kind==='text'?'New caption':'',15,35,kind==='text'?65:38,kind==='text'?11:38,'#172742','#ffffff',3.2);
@@ -147,8 +147,8 @@ $('copyCaption').onclick=async()=>{const copy=[$('postTitle').value,$('caption')
 $('batch').onclick=()=>{if(busy||jobs.length)return;const selected=Array.from($('destinations').children).filter(l=>l.firstChild.checked);jobs=[...new Set(selected.map(l=>l.lastChild.value))];if(!jobs.length){$('jobStatus').value='Choose at least one destination';return}
  rendered=[];jobSet=[...jobs];oldRatio=currentRatio;$('results').replaceChildren();nextJob()};
 function nextJob(){if(jobs.length){switchRatio(jobs.shift());render()}else{switchRatio(oldRatio);jobSet=[];$('jobStatus').value='Ready to download or share'}}
-function updateProgress(){const p=clamp(Math.floor(time/Math.max(.001,total())*100),0,99);$('progress').value=p;$('jobStatus').value=currentRatio+' · '+p+'% · '+fmt(time)+' / '+fmt(total());notify('Rendering '+currentRatio+' · '+p+'%')}
-function finishJob(ok){$('progress').value=ok?100:0;if(!ok){jobs=[];jobSet=[];$('jobStatus').value='Render failed. Try a lower resolution.';return}if(jobSet.length)setTimeout(nextJob,60)}
+function updateProgress(){if(typeof fixedRequest!=='undefined'&&fixedRequest)return;const length=Math.max(.001,(renderEnd??total())-renderStart),p=clamp(Math.floor((time-renderStart)/length*100),0,99);$('progress').value=p;$('jobStatus').value=(renderPaused?'Paused · ':'Rendering · ')+currentRatio+' · '+p+'% · '+fmt(Math.max(0,time-renderStart))+' / '+fmt(length);notify((renderPaused?'Paused ':'Rendering ')+currentRatio+' · '+p+'%')}
+function finishJob(ok){$('progress').value=ok?100:0;if(!ok){jobs=[];jobSet=[];$('jobStatus').value=renderCancelled?'Render cancelled':'Render failed. Try a lower resolution.';return}if(jobSet.length)setTimeout(nextJob,60)}
 function registerRender(link,blob){
  const ext=link.download.split('.').pop(),name=($('postTitle').value.trim()||'FrameCast').replace(/[^\p{L}\p{N} _-]/gu,'_')+'-'+currentRatio.replace(':','x')+'-'+$('resolution').value+'.'+ext;
  link.download=name;link.textContent='Download '+name;const line=el('div');line.className='actions';line.append(link);const file=new File([blob],name,{type:blob.type.split(';')[0]});
