@@ -38,6 +38,23 @@ jobs:
           Copy-Item license-server.example.json license-server.json
           ./BUILD-EXE.ps1
           if (-not (Test-Path dist/PoknaphamEditingSuite/PoknaphamEditingSuite.exe)) { throw 'Missing EXE' }
+      - name: Smoke test customer EXE
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath (Resolve-Path 'dist/PoknaphamEditingSuite/PoknaphamEditingSuite.exe') -PassThru
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              Start-Sleep -Seconds 1
+              try {
+                $page = Invoke-WebRequest 'http://127.0.0.1:4173/license' -TimeoutSec 2
+                if ($page.StatusCode -eq 200 -and $page.Content -match 'Activate Poknapham Editing Suite') { $ready = $true; break }
+              } catch { }
+            }
+            if (-not $ready) { throw 'Customer EXE did not serve its license activation page.' }
+          } finally {
+            Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          }
       - name: Upload client build
         uses: actions/upload-artifact@v4
         with:
