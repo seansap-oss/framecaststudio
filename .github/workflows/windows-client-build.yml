@@ -47,7 +47,7 @@ jobs:
             for ($i = 0; $i -lt 30; $i++) {
               Start-Sleep -Seconds 1
               try {
-                $page = Invoke-WebRequest 'http://localhost:4173/license' -TimeoutSec 2
+                $page = Invoke-WebRequest 'http://127.0.0.1:4173/license' -Headers @{ Host = 'localhost:4173' } -TimeoutSec 2
                 if ($page.StatusCode -eq 200 -and $page.Content -match 'Activate Poknapham Editing Suite') { $ready = $true; break }
               } catch { }
             }
