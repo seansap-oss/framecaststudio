@@ -29,6 +29,11 @@ if ($LASTEXITCODE -ne 0) {
     & $python.Source -3 -m pip install pyinstaller
     if ($LASTEXITCODE -ne 0) { throw 'Could not install PyInstaller.' }
 }
+& $python.Source -3 -m pip show pywebview *> $null
+if ($LASTEXITCODE -ne 0) {
+    & $python.Source -3 -m pip install pywebview
+    if ($LASTEXITCODE -ne 0) { throw 'Could not install the desktop window dependency.' }
+}
 & $python.Source -3 -m pip show pillow *> $null
 if ($LASTEXITCODE -ne 0) {
     & $python.Source -3 -m pip install pillow
@@ -43,7 +48,7 @@ $webAssets = @(
 )
 $appName = if ($Owner) { 'PoknaphamOwnerSuite' } else { 'PoknaphamEditingSuite' }
 $arguments = @('-3', '-m', 'PyInstaller', '--noconfirm', '--clean',
-    '--onedir', '--console', '--name', $appName,
+    '--onedir', '--windowed', '--name', $appName,
     '--icon', (Join-Path $PSScriptRoot 'poknapham-logo.png'),
     '--add-binary', "$($ffmpeg.Source);.",
     '--add-binary', "$($ffprobe.Source);."
@@ -53,7 +58,7 @@ foreach ($file in $webAssets) {
     $arguments += @('--add-data', "$(Join-Path $PSScriptRoot $file);.")
 }
 if (-not $Owner) { $arguments += @('--add-data', "$(Join-Path $PSScriptRoot 'license-server.json');.") }
-foreach ($file in @('server.py', 'licensing.py', 'online_license.py', 'native_render.py', 'offline_render.py', 'export_budget.py', 'upload_transport.py', 'publish-settings.example.json')) {
+foreach ($file in @('server.py', 'desktop_shell.py', 'licensing.py', 'online_license.py', 'native_render.py', 'offline_render.py', 'export_budget.py', 'upload_transport.py', 'publish-settings.example.json')) {
     if (-not (Test-Path -LiteralPath $file)) { throw "Missing build source: $file" }
 }
 $referenced = [regex]::Matches($html, '(?:src|href)="([^"]+\.(?:js|css|png))"')
@@ -83,13 +88,13 @@ if (-not (Test-Path -LiteralPath (Join-Path $result "$appName.exe"))) {
 }
 Copy-Item -LiteralPath 'publish-settings.example.json' -Destination (Join-Path $result 'publish-settings.example.json') -Force
 $checksums = [ordered]@{}
-foreach ($file in (@($webAssets) + @('server.py','licensing.py','online_license.py','native_render.py','offline_render.py','export_budget.py','upload_transport.py'))) {
+foreach ($file in (@($webAssets) + @('server.py','desktop_shell.py','licensing.py','online_license.py','native_render.py','offline_render.py','export_budget.py','upload_transport.py'))) {
     $checksums[$file] = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
 }
 ([ordered]@{ version=$version; variant=$(if ($Owner) {'owner-pc-bound'} else {'customer-online-serial'}); builtUtc=(Get-Date).ToUniversalTime().ToString('o'); sourceSha256=$checksums } | ConvertTo-Json -Depth 4) |
     Set-Content -LiteralPath (Join-Path $result 'build-info.json') -Encoding UTF8
 Write-Host "Built: $result" -ForegroundColor Green
-Write-Host 'The EXE starts a local server and opens the editor in your default browser.'
+Write-Host 'The EXE opens its own desktop window; it runs the local editor service without a console.'
 if ($Owner) {
     Write-Host 'Owner build: no serial entry on this PC; a copied build is locked to the original Windows installation.'
 } else {

@@ -23,7 +23,7 @@ CONFIG = APP_DIR/'publish-settings.json'
 LICENSE_FILE = (Path(os.environ.get('LOCALAPPDATA', str(APP_DIR)))/'PoknaphamEditingSuite'/'license.key') if getattr(sys, 'frozen', False) else APP_DIR/'license.key'
 LICENSE_SERVER_CONFIG = ROOT/'license-server.json'
 OWNER_DEVICE = None  # Only the separately generated owner EXE embeds a PC code.
-APP_VERSION = '0.12.15'
+APP_VERSION = '0.12.16'
 
 def owner_access():
     return bool(getattr(sys,'frozen',False) and OWNER_DEVICE and machine_code()==OWNER_DEVICE)
@@ -384,10 +384,41 @@ class Handler(BaseHTTPRequestHandler):
             try:return self.reply({'error':str(e)},code=400)
             except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError):return
 
-if __name__=='__main__':
-    if not shutil.which('ffmpeg'):print('FFmpeg not found: editing is available; install FFmpeg for MP4 / MOV conversion.',flush=True)
-    server=ThreadingHTTPServer(('127.0.0.1',4173),Handler)
-    print('Poknapham Editing Suite: '+ORIGIN,flush=True);webbrowser.open(ORIGIN)
-    try:server.serve_forever()
-    except KeyboardInterrupt:pass
-    finally:server.server_close();temp.cleanup()
+def run():
+    frozen = getattr(sys, 'frozen', False)
+    if frozen:
+        # PyInstaller's windowed bootloader has no standard streams. Keep errors
+        # available for support without showing a terminal to the user.
+        log_dir = Path(os.environ.get('LOCALAPPDATA', str(APP_DIR))) / 'PoknaphamEditingSuite'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        sys.stdout = sys.stderr = (log_dir / 'desktop.log').open('a', encoding='utf-8', buffering=1)
+    server = None
+    try:
+        if not shutil.which('ffmpeg'):
+            print('FFmpeg not found: MP4 / MOV conversion is unavailable.', flush=True)
+        server = ThreadingHTTPServer(('127.0.0.1', 4173), Handler)
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        if frozen and '--server-only' not in sys.argv:
+            from desktop_shell import show_editor
+            show_editor(ORIGIN)
+        elif not frozen:
+            print('Poknapham Editing Suite: ' + ORIGIN, flush=True)
+            webbrowser.open(ORIGIN)
+            worker.join()
+        else:
+            worker.join()
+    except Exception as exc:
+        traceback.print_exc()
+        if frozen and sys.platform == 'win32':
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None, str(exc) + '\n\nDetails: ' + str(log_dir / 'desktop.log'), 'Poknapham Editing Suite', 0x10)
+        raise
+    finally:
+        if server:
+            server.shutdown()
+            server.server_close()
+        temp.cleanup()
+
+if __name__ == '__main__':
+    run()
