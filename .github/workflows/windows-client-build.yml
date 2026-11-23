@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -68,3 +68,9 @@ jobs:
             dist/PoknaphamEditingSuite/**
           if-no-files-found: error
           retention-days: 30
+      - name: Publish direct client installer download
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create client-v0.12.15 installer/PoknaphamEditingSuite-Setup-v0.12.15.exe --target $env:GITHUB_SHA --title 'Poknapham Editing Suite v0.12.15 client installer' --notes 'Windows client installer. Requires an active serial and internet access. The private owner test edition is not included.' --latest=false
