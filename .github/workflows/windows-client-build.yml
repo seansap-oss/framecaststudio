@@ -41,17 +41,21 @@ jobs:
       - name: Smoke test customer EXE
         shell: pwsh
         run: |
-          $app = Start-Process -FilePath (Resolve-Path 'dist/PoknaphamEditingSuite/PoknaphamEditingSuite.exe') -PassThru
+          $app = Start-Process -FilePath (Resolve-Path 'dist/PoknaphamEditingSuite/PoknaphamEditingSuite.exe') -RedirectStandardOutput client-out.log -RedirectStandardError client-err.log -PassThru
           try {
             $ready = $false
             for ($i = 0; $i -lt 30; $i++) {
               Start-Sleep -Seconds 1
               try {
-                $page = Invoke-WebRequest 'http://127.0.0.1:4173/license' -TimeoutSec 2
+                $page = Invoke-WebRequest 'http://localhost:4173/license' -TimeoutSec 2
                 if ($page.StatusCode -eq 200 -and $page.Content -match 'Activate Poknapham Editing Suite') { $ready = $true; break }
               } catch { }
             }
-            if (-not $ready) { throw 'Customer EXE did not serve its license activation page.' }
+            if (-not $ready) {
+              Get-Content client-out.log -ErrorAction SilentlyContinue
+              Get-Content client-err.log -ErrorAction SilentlyContinue
+              throw 'Customer EXE did not serve its license activation page.'
+            }
           } finally {
             Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
           }
