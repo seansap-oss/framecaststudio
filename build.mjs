@@ -9,4 +9,4 @@ const files = ['index.html', 'studio.css', 'editor-workspace.css', 'sample.js',
 await rm(path.join(root, 'dist'), { recursive: true, force: true });
 await mkdir(path.join(root, 'dist'), { recursive: true });
 await Promise.all(files.map(file => copyFile(path.join(root, file), path.join(root, 'dist', file))));
-console.log(`Poknapham Editing Suite v0.12.17: ${files.length} public files built into dist/`);
+console.log(`Poknapham Editing Suite v0.12.18: ${files.length} public files built into dist/`);

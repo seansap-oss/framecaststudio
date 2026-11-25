@@ -19,7 +19,7 @@ async function renderDiagnostics(id,reason){
 function renderAudioSources(){
  return Object.entries(assets).flatMap(([id,media])=>{
   const l=layers[id];
-  if(!l||l.removed||!['video','audio'].includes(l.kind)||!media?.src)return [];
+  if(!l||l.removed||!l.visible||!['video','audio'].includes(l.kind)||!media?.src)return [];
   return [{id,start:l.start,end:l.end||total(),sourceIn:l.trimIn||0,
    volume:l.volume??100,mute:!!l.muted,bus:l.bus||'clip',url:media.currentSrc||media.src}];
  });

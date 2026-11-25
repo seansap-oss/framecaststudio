@@ -44,7 +44,7 @@ class ServiceTests(unittest.TestCase):
         code, data = self.request('GET', '/api/health')
         self.assertEqual(code, 200)
         self.assertEqual(data['service'], 'poknapham-local')
-        self.assertEqual(data['version'], '0.12.17')
+        self.assertEqual(data['version'], '0.12.18')
         self.assertTrue(data['fixedFrames'])
         self.assertIsInstance(data['ffmpeg'], bool)
 

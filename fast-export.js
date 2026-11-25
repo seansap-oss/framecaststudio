@@ -13,7 +13,7 @@ function fastCandidate(settings){
  const video=visible.filter(([id,l])=>l.kind==='video'&&assets[id]?.tagName==='VIDEO');
  if(video.length!==1)return rejectNative("Native export needs one visible video in this range; found "+video.length+".");
  const [id,l]=video[0],media=assets[id];
- if(l.x!==0||l.y!==0||l.w!==100||l.h!==100||l.grade||l.crop||l.opacity!==100||l.layout==='Split 50:50'||l.rotation||l.flip||l.animation&&l.animation!=='None')return rejectNative('Video '+(l.name||id)+' has resizing, cropping, grading or animation.');
+ if(l.x!==0||l.y!==0||l.w!==100||l.h!==100||l.grade||l.opacity!==100||l.layout==='Split 50:50'||l.rotation||l.flip||l.animation&&l.animation!=='None')return rejectNative('Video '+(l.name||id)+' has resizing, cropping, grading or animation.');
  if(settings.start<l.start||settings.end>(l.end||total())||settings.end>l.start+media.duration-(l.trimIn||0)+.01)return rejectNative('The export range extends outside video '+(l.name||id)+'. Select a range within the clip.');
  const audio=renderAudioSources().filter(a=>!a.mute&&a.volume>0&&a.start<settings.end&&a.end>settings.start);
  if(settings.audio.some(a=>layers[a.id]?.points?.length))return rejectNative('Audio volume keyframes require the full compositor.');
@@ -73,7 +73,7 @@ render=async function(){
   lock(true);$('jobStatus').value='Preparing native video and ticker export';
   settings.visual=[{id:candidate.id}];settings.sourceIn=candidate.sourceIn;
   settings.width=monitor.width;settings.height=monitor.height;settings.background=$('back').value;
-  const {prepared,uploads}=await nativeGraphics(candidate,settings);settings.nativeLayers=prepared;
+  const {prepared,uploads}=await nativeGraphics(candidate,settings);settings.nativeLayers=prepared;settings.nativeCrop=!!layers[candidate.id].crop;
   const started=await fixedJson('/api/render/start',JSON.stringify(settings),fixedRequest.signal);id=fixedSession=started.id;
   const sourceUploads=[];
   const sources=new Map(renderAudioSources().map(a=>[a.id,a.url]));sources.set(candidate.id,candidate.media.currentSrc||candidate.media.src);

@@ -18,11 +18,32 @@ if (-not $Owner) {
 }
 
 $python = Get-Command py -ErrorAction Stop
-$ffmpeg = Get-Command ffmpeg -ErrorAction Stop
-$ffprobe = Get-Command ffprobe -ErrorAction Stop
-if ($ffmpeg.Source -notmatch '\.exe$' -or $ffprobe.Source -notmatch '\.exe$') {
-    throw 'FFmpeg and FFprobe must resolve to Windows .exe files on PATH.'
+# Chocolatey exposes shim launchers in bin; those are not redistributable FFmpeg binaries.
+function Resolve-MediaBinary([string]$name) {
+    $command = (Get-Command $name -CommandType Application -ErrorAction Stop).Source
+    $choco = if ($env:ChocolateyInstall) { $env:ChocolateyInstall } else { 'C:\ProgramData\chocolatey' }
+    $candidates = @()
+    if ($command.StartsWith((Join-Path $choco 'bin'), [StringComparison]::OrdinalIgnoreCase)) {
+        $candidates += Get-ChildItem (Join-Path $choco 'lib/ffmpeg*') -Directory -ErrorAction SilentlyContinue |
+            Get-ChildItem -Recurse -File -Filter "$name.exe" | Select-Object -ExpandProperty FullName
+    }
+    $candidates += $command
+    foreach ($candidate in $candidates) {
+        $item = Get-Item -LiteralPath $candidate
+        # The supported Windows distribution includes full standalone binaries.
+        if ($item.Length -lt 1MB) { continue }
+        $versionText = & $candidate -version 2>&1
+        if ($LASTEXITCODE -eq 0 -and ($versionText -join "`n") -match "^$name version") { return $candidate }
+    }
+    throw "Cannot locate a full $name.exe. A Chocolatey shim cannot be bundled. Install the full FFmpeg package."
 }
+$ffmpegBinary = Resolve-MediaBinary 'ffmpeg'
+$ffprobeBinary = Resolve-MediaBinary 'ffprobe'
+$encoderList = (& $ffmpegBinary -hide_banner -encoders 2>&1) -join "`n"
+if ($LASTEXITCODE -ne 0 -or $encoderList -notmatch '\blibx264\b' -or $encoderList -notmatch '\baac\b') {
+    throw 'The bundled FFmpeg must include H.264 (libx264) and AAC for portable customer exports.'
+}
+Write-Host "Bundling $ffmpegBinary and $ffprobeBinary"
 
 & $python.Source -3 -m pip show pyinstaller *> $null
 if ($LASTEXITCODE -ne 0) {
@@ -50,8 +71,8 @@ $appName = if ($Owner) { 'PoknaphamOwnerSuite' } else { 'PoknaphamEditingSuite' 
 $arguments = @('-3', '-m', 'PyInstaller', '--noconfirm', '--clean',
     '--onedir', '--windowed', '--name', $appName,
     '--icon', (Join-Path $PSScriptRoot 'poknapham-logo.png'),
-    '--add-binary', "$($ffmpeg.Source);.",
-    '--add-binary', "$($ffprobe.Source);."
+    '--add-binary', "$ffmpegBinary;.",
+    '--add-binary', "$ffprobeBinary;."
 )
 foreach ($file in $webAssets) {
     if (-not (Test-Path -LiteralPath $file)) { throw "Missing web asset: $file" }
@@ -86,6 +107,7 @@ $result = Join-Path $PSScriptRoot "dist\$appName"
 if (-not (Test-Path -LiteralPath (Join-Path $result "$appName.exe"))) {
     throw 'The executable was not created.'
 }
+& (Join-Path $PSScriptRoot 'tests/check-bundled-media.ps1') -AppDirectory $result
 Copy-Item -LiteralPath 'publish-settings.example.json' -Destination (Join-Path $result 'publish-settings.example.json') -Force
 $checksums = [ordered]@{}
 foreach ($file in (@($webAssets) + @('server.py','desktop_shell.py','licensing.py','online_license.py','native_render.py','offline_render.py','export_budget.py','upload_transport.py'))) {

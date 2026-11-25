@@ -2,7 +2,7 @@ name: Windows client build
 
 on:
   push:
-    branches: [windows-client-v0.12.17]
+    branches: [windows-client-v0.12.18]
   workflow_dispatch:
 
 jobs:
@@ -80,9 +80,9 @@ jobs:
       - name: Upload client build
         uses: actions/upload-artifact@v4
         with:
-          name: Poknapham-Client-v0.12.17-Windows
+          name: Poknapham-Client-v0.12.18-Windows
           path: |
-            installer/PoknaphamEditingSuite-Setup-v0.12.17.exe
+            installer/PoknaphamEditingSuite-Setup-v0.12.18.exe
             dist/PoknaphamEditingSuite/**
           if-no-files-found: error
           retention-days: 30
@@ -91,4 +91,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create client-v0.12.17 installer/PoknaphamEditingSuite-Setup-v0.12.17.exe --target $env:GITHUB_SHA --title 'Poknapham Editing Suite v0.12.17 client installer' --notes 'Windows desktop client installer. Opens in its own window without Chrome or a console. Requires an active serial and internet access. The private owner test edition is not included.' --latest=false
+          gh release create client-v0.12.18 installer/PoknaphamEditingSuite-Setup-v0.12.18.exe --target $env:GITHUB_SHA --title 'Poknapham Editing Suite v0.12.18 client installer' --notes 'Windows desktop client installer. Opens in its own window without Chrome or a console. Requires an active serial and internet access. The private owner test edition is not included.' --latest=false

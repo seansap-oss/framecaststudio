@@ -23,7 +23,7 @@ CONFIG = APP_DIR/'publish-settings.json'
 LICENSE_FILE = (Path(os.environ.get('LOCALAPPDATA', str(APP_DIR)))/'PoknaphamEditingSuite'/'license.key') if getattr(sys, 'frozen', False) else APP_DIR/'license.key'
 LICENSE_SERVER_CONFIG = ROOT/'license-server.json'
 OWNER_DEVICE = None  # Only the separately generated owner EXE embeds a PC code.
-APP_VERSION = '0.12.17'
+APP_VERSION = '0.12.18'
 
 def owner_access():
     return bool(getattr(sys,'frozen',False) and OWNER_DEVICE and machine_code()==OWNER_DEVICE)
@@ -65,15 +65,23 @@ def oauth(provider, code):
         pages=http(graph+'/me/accounts?fields=id,name,access_token,instagram_business_account&limit=100',headers=auth(t['access_token']))['data']
         if not pages: raise ValueError('No accessible Facebook Pages returned')
         tokens['pages']={p['id']:p for p in pages}
+encoder_probe_error = None
+
 @lru_cache(maxsize=1)
 def available_encoders():
-    if not shutil.which('ffmpeg'): return {}
+    global encoder_probe_error
+    encoder_probe_error = None
+    if not shutil.which('ffmpeg'):
+        encoder_probe_error = 'The packaged FFmpeg executable was not found.'
+        return {}
     try:
-        output=subprocess.check_output(['ffmpeg','-hide_banner','-encoders'],text=True,stderr=subprocess.DEVNULL,timeout=10)
+        output=subprocess.check_output(['ffmpeg','-hide_banner','-encoders'],text=True,stderr=subprocess.STDOUT,timeout=15,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
         names={line.split()[1] for line in output.splitlines() if len(line.split())>1}
         candidates={'h264':['libx264'],'hevc':['libx265'],'av1':['libsvtav1','libaom-av1'],'vp9':['libvpx-vp9']}
         return {k:next(n for n in v if n in names) for k,v in candidates.items() if any(n in names for n in v)}
-    except (OSError,subprocess.SubprocessError): return {}
+    except (OSError,subprocess.SubprocessError) as exc:
+        encoder_probe_error = 'FFmpeg could not start or list encoders: ' + str(exc)
+        return {}
 
 CODEC_FORMATS={'mp4':('h264','hevc','av1'),'mov':('h264','hevc'),'webm':('vp9','av1')}
 def resolve_codec(fmt,codec=None):
@@ -167,7 +175,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not post and route=='/poknapham-logo.png':
                     return self.reply((ROOT/'poknapham-logo.png').read_bytes(),'image/png')
                 if not post and route=='/license':
-                    page='''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Activate Poknapham Editing Suite</title><style>body{font:16px system-ui;background:#101827;color:#f0f3f8;min-height:100vh;display:grid;place-items:center;margin:0}main{max-width:550px;padding:38px;background:#1b2638;border:1px solid #40506a;border-radius:14px}img{width:80px;height:80px;border-radius:50%;object-fit:cover;background:white}h1{font-size:25px}textarea{width:100%;box-sizing:border-box;min-height:110px;background:#111a2a;color:white;padding:12px;border:1px solid #66758c;border-radius:8px}code{display:block;padding:12px;background:#111a2a;word-break:break-all;user-select:all}button{background:#e9c573;color:#101827;border:0;border-radius:8px;padding:12px 20px;font-weight:bold;cursor:pointer}p{line-height:1.5;color:#b7c7de}</style><main><img src="/poknapham-logo.png" alt=""><h1>Poknapham Editing Suite</h1><p>Internet access and an active serial are required. One customer account can register one Windows PC. The editor stops when the term expires or is revoked.</p><p>This PC code:</p><code id="device">__DEVICE__</code><p><button id="copy" type="button">Copy PC code</button></p><p>Paste the serial for the current three-month term.</p><textarea id="key" aria-label="Serial number" placeholder="PES-..."></textarea><p><button id="activate">Activate serial</button></p><p id="message"></p></main><script>document.getElementById('copy').onclick=()=>navigator.clipboard.writeText(document.getElementById('device').textContent);document.getElementById('activate').onclick=async()=>{const message=document.getElementById('message');try{const response=await fetch('/api/license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:document.getElementById('key').value})});const result=await response.json();if(!response.ok)throw Error(result.error);message.textContent='Activated for '+result.customer+' until '+result.expires+'. Opening editor…';setTimeout(()=>location.href='/',1000)}catch(error){message.textContent=error.message}}</script></html>'''
+                    page='''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Activate Poknapham Editing Suite</title><style>body{font:16px system-ui;background:#101827;color:#f0f3f8;min-height:100vh;display:grid;place-items:center;margin:0}main{max-width:550px;padding:38px;background:#1b2638;border:1px solid #40506a;border-radius:14px}img{width:80px;height:80px;border-radius:50%;object-fit:cover;background:white}h1{font-size:25px}textarea{width:100%;box-sizing:border-box;min-height:110px;background:#111a2a;color:white;padding:12px;border:1px solid #66758c;border-radius:8px}code{display:block;padding:12px;background:#111a2a;word-break:break-all;user-select:all}button{background:#e9c573;color:#101827;border:0;border-radius:8px;padding:12px 20px;font-weight:bold;cursor:pointer}p{line-height:1.5;color:#b7c7de}</style><main><img src="/poknapham-logo.png" alt=""><h1>Poknapham Editing Suite</h1><p>Internet access and an active serial are required. One customer account can register one Windows PC. The editor stops when the term expires or is revoked.</p><p>This PC code:</p><code id="device">__DEVICE__</code><p><button id="copy" type="button">Copy PC code</button></p><p>Paste your demo or paid license serial. The expiry date is confirmed during activation.</p><textarea id="key" aria-label="Serial number" placeholder="PES-..."></textarea><p><button id="activate">Activate serial</button></p><p id="message"></p></main><script>document.getElementById('copy').onclick=()=>navigator.clipboard.writeText(document.getElementById('device').textContent);document.getElementById('activate').onclick=async()=>{const message=document.getElementById('message');try{const response=await fetch('/api/license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:document.getElementById('key').value})});const result=await response.json();if(!response.ok)throw Error(result.error);message.textContent='Activated for '+result.customer+' until '+result.expires+'. Opening editor…';setTimeout(()=>location.href='/',1000)}catch(error){message.textContent=error.message}}</script></html>'''
                     return self.reply(page.replace('__DEVICE__',machine_code()),'text/html; charset=utf-8')
                 if post and route=='/api/license':
                     size=int(self.headers.get('Content-Length','0'))
@@ -192,7 +200,7 @@ class Handler(BaseHTTPRequestHandler):
                 if 'code' not in qs: raise ValueError('Sign-in cancelled or denied. Return to Poknapham Editing Suite and reconnect.')
                 oauth(provider,qs['code'][0]);return self.reply('Account connected. Close this tab and refresh accounts in Poknapham Editing Suite.','text/plain')
             if not post and route=='/api/health':
-                return self.reply(dict(service='poknapham-local',version=APP_VERSION,ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders()))
+                return self.reply(dict(service='poknapham-local',version=APP_VERSION,ffmpeg=bool(shutil.which('ffmpeg')),fixedFrames=True,encoders=available_encoders(),encoderError=encoder_probe_error))
             if post and route=='/api/render/start':
                 if not shutil.which('ffmpeg') or not shutil.which('ffprobe'): raise ValueError('Install FFmpeg and FFprobe for fixed-frame export')
                 size=int(self.headers.get('Content-Length','0'))

@@ -7,3 +7,5 @@ test('audio mix and transformed video do not silently lose effects',()=>{for(con
 test('full-canvas dragged video also qualifies',()=>{const c=setup();vm.runInContext('layers.main.program=false',c);assert.equal(vm.runInContext('fastCandidate(settings).id',c),'main')});
 
 test('native accepts volume and EQ adjustments',()=>{const c=setup();vm.runInContext('settings.bass=3;settings.master=20;layers.main.volume=50',c);assert.ok(vm.runInContext('fastCandidate(settings)',c))});
+
+test('portrait Fill canvas can use native export without dropping the crop',()=>{const c=setup();vm.runInContext('layers.main.crop=true;monitor.width=720;monitor.height=1280',c);assert.ok(vm.runInContext('fastCandidate(settings)',c))});

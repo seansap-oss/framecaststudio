@@ -1,4 +1,4 @@
-# Poknapham Editing Suite v0.12.17
+# Poknapham Editing Suite v0.12.18
 
 ## Windows desktop launcher
 

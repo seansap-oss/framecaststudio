@@ -26,7 +26,8 @@ def ticker_graph(settings, root):
     color=settings.get('background','#000000')
     import re
     if not re.fullmatch('#[a-fA-F0-9]{6}',color):raise ValueError('Invalid background')
-    graph=[f'[0:v]setpts=PTS-STARTPTS,scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=0x{color[1:]},setsar=1,fps={fps}:start_time=0:eof_action=pass,tpad=stop_mode=clone:stop={math.ceil(.25*fps)+1},trim=end_frame={frames}[base]']
+    framing = f'scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}' if settings.get('nativeCrop') else f'scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=0x{color[1:]}'
+    graph=[f'[0:v]setpts=PTS-STARTPTS,{framing},setsar=1,fps={fps}:start_time=0:eof_action=pass,tpad=stop_mode=clone:stop={math.ceil(.25*fps)+1},trim=end_frame={frames}[base]']
     inputs=[];current='base';idx=1
     for i,item in enumerate(items):
         kind=item.get('kind');x=number(item.get('x',0),-8192,8192);y=number(item.get('y',0),-8192,8192)
