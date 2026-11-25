@@ -47,7 +47,7 @@ function encoderStatus(){
  $('quality').disabled=!bridge||!bridgeInfo.ffmpeg;$('quality').title=bridge?'FFmpeg compression preset':'Browser bitrate is set automatically';
 }
 const bridgeReady=(async()=>{
- try{const info=await api('/api/health');if(info.service==='framecast-local'){bridge=true;bridgeInfo=info}}catch{}
+ try{const info=await api('/api/health');if(info.service==='poknapham-local'){bridge=true;bridgeInfo=info}}catch{}
  encoderStatus();await refreshAccounts();
 })();
 for(const [button,provider] of [['googleLogin','google'],['metaLogin','meta']])$(button).onclick=async()=>{

@@ -23,7 +23,7 @@ CONFIG = APP_DIR/'publish-settings.json'
 LICENSE_FILE = (Path(os.environ.get('LOCALAPPDATA', str(APP_DIR)))/'PoknaphamEditingSuite'/'license.key') if getattr(sys, 'frozen', False) else APP_DIR/'license.key'
 LICENSE_SERVER_CONFIG = ROOT/'license-server.json'
 OWNER_DEVICE = None  # Only the separately generated owner EXE embeds a PC code.
-APP_VERSION = '0.12.16'
+APP_VERSION = '0.12.17'
 
 def owner_access():
     return bool(getattr(sys,'frozen',False) and OWNER_DEVICE and machine_code()==OWNER_DEVICE)
